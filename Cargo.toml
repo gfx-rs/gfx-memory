@@ -1,0 +1,13 @@
+[package]
+name = "gfx_mem"
+version = "0.0.0"
+authors = ["omni-viral <scareaangel@gmail.com>"]
+repository = "https://github.com/omni-viral/gfx_mem.git"
+description = "memory manager for gfx_hal"
+
+[features]
+checks = []
+
+[dependencies]
+gfx-hal = { version = "0.1.0", git = "https://github.com/gfx-rs/gfx.git" }
+relevant = "0.1"
