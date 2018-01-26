@@ -36,7 +36,7 @@ where
     B: Backend,
 {
     type Tag = ();
-    type Info = ();
+    type Request = ();
 
     fn alloc(
         &mut self,
@@ -57,16 +57,16 @@ where
         self.allocations -= 1;
     }
 
-    fn is_unused(&self) -> bool {
-        self.allocations == 0
+    fn is_used(&self) -> bool {
+        self.allocations != 0
     }
 
     fn dispose(self, _: &B::Device) -> Result<(), Self> {
-        if self.is_unused() {
+        if self.is_used() {
+            Err(self)
+        } else {
             self.relevant.dispose();
             Ok(())
-        } else {
-            Err(self)
         }
     }
 }

@@ -44,17 +44,17 @@ where
         unsafe { block.dispose() }
     }
 
-    fn is_unused(&self) -> bool {
-        self.freed == self.used
+    fn is_used(&self) -> bool {
+        self.freed != self.used
     }
 
     fn dispose(self, owner: &mut A, device: &B::Device) -> Result<(), Self> {
-        if self.is_unused() {
+        if self.is_used() {
+            Err(self)
+        } else {
             let ArenaNode { block, .. } = self;
             owner.free(device, block);
             Ok(())
-        } else {
-            Err(self)
         }
     }
 }
@@ -64,7 +64,7 @@ where
 pub struct ArenaAllocator<B: Backend, A: MemoryAllocator<B>> {
     id: MemoryTypeId,
     arena_size: u64,
-    freed: usize,
+    freed: u64,
     hot: Option<ArenaNode<B, A>>,
     nodes: VecDeque<ArenaNode<B, A>>,
 }
@@ -98,16 +98,16 @@ where
     fn cleanup(&mut self, owner: &mut A, device: &B::Device) {
         while self.nodes
             .front()
-            .map(|node| node.is_unused())
+            .map(|node| !node.is_used())
             .unwrap_or(false)
         {
             if let Some(node) = self.nodes.pop_front() {
                 if let Some(ref mut hot) = self.hot {
-                    if hot.is_unused() {
+                    if hot.is_used() {
+                        self.nodes.push_back(replace(hot, node));
+                    } else {
                         // No need to replace.
                         node.dispose(owner, device).unwrap();
-                    } else {
-                        self.nodes.push_back(replace(hot, node));
                     }
                 }
             }
@@ -119,7 +119,7 @@ where
         &mut self,
         owner: &mut A,
         device: &B::Device,
-        info: A::Info,
+        info: A::Request,
         reqs: Requirements,
     ) -> Result<ArenaNode<B, A>, MemoryError> {
         let arena_size = ((reqs.size - 1) / self.arena_size + 1) * self.arena_size;
@@ -139,23 +139,23 @@ where
     A: MemoryAllocator<B>,
 {
     type Owner = A;
-    type Info = A::Info;
-    type Tag = usize;
+    type Request = A::Request;
+    type Tag = Tag;
 
     fn alloc(
         &mut self,
         owner: &mut A,
         device: &B::Device,
-        info: A::Info,
+        info: A::Request,
         reqs: Requirements,
-    ) -> Result<Block<B, Self::Tag>, MemoryError> {
+    ) -> Result<Block<B, Tag>, MemoryError> {
         if (1 << self.id.0) & reqs.type_mask == 0 {
             return Err(MemoryError::NoCompatibleMemoryType);
         }
-        let count = self.nodes.len();
+        let count = self.freed + self.nodes.len() as u64;
         if let Some(ref mut hot) = self.hot.as_mut() {
             match hot.alloc(reqs) {
-                Some(block) => return Ok(block.set_tag(count)),
+                Some(block) => return Ok(block.set_tag(Tag(count))),
                 None => {}
             }
         };
@@ -168,13 +168,13 @@ where
                 Err(hot) => self.nodes.push_back(hot),
             }
         };
-        let count = self.nodes.len();
-        Ok(block.set_tag(count))
+        let count = self.freed + self.nodes.len() as u64;
+        Ok(block.set_tag(Tag(count)))
     }
 
-    fn free(&mut self, owner: &mut A, device: &B::Device, block: Block<B, Self::Tag>) {
-        let (block, tag) = block.replace_tag(());
-        let index = tag - self.freed;
+    fn free(&mut self, owner: &mut A, device: &B::Device, block: Block<B, Tag>) {
+        let (block, Tag(tag)) = block.replace_tag(());
+        let index = (tag - self.freed) as usize;
 
         match self.nodes.len() {
             len if len == index => {
@@ -188,22 +188,28 @@ where
         }
     }
 
-    fn is_unused(&self) -> bool {
+    fn is_used(&self) -> bool {
         self.nodes.is_empty()
             && self.hot
                 .as_ref()
-                .map(|node| node.is_unused())
-                .unwrap_or(true)
+                .map(|node| node.is_used())
+                .unwrap_or(false)
     }
 
     fn dispose(mut self, owner: &mut A, device: &B::Device) -> Result<(), Self> {
-        if self.is_unused() {
+        if self.is_used() {
+            Err(self)
+        } else {
             if let Some(hot) = self.hot.take() {
                 hot.dispose(owner, device).unwrap();
             }
             Ok(())
-        } else {
-            Err(self)
         }
     }
 }
+
+
+/// Opaque type for `Block` tag.
+/// `ArenaAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
+#[derive(Debug, Clone, Copy)]
+pub struct Tag(u64);

@@ -33,7 +33,7 @@ where
         self.blocks.len() * self.chunks_per_block
     }
 
-    fn grow(&mut self, owner: &mut A, device: &B::Device, info: A::Info) -> Result<(), MemoryError> {
+    fn grow(&mut self, owner: &mut A, device: &B::Device, info: A::Request) -> Result<(), MemoryError> {
         let reqs = Requirements {
             type_mask: 1 << self.id.0,
             size: self.chunk_size * self.chunks_per_block as u64,
@@ -52,14 +52,14 @@ where
         Ok(())
     }
 
-    fn alloc_no_grow(&mut self) -> Option<Block<B, usize>> {
+    fn alloc_no_grow(&mut self) -> Option<Block<B, Tag>> {
         self.free.pop_front().map(|(block_index, chunk_index)| {
             let offset = self.blocks[block_index].1 + chunk_index * self.chunk_size;
             let block = Block::new(
                 self.blocks[block_index].0.memory(),
                 offset..self.chunk_size + offset,
             );
-            block.set_tag(block_index)
+            block.set_tag(Tag(block_index))
         })
     }
 }
@@ -70,16 +70,16 @@ where
     A: MemoryAllocator<B>,
 {
     type Owner = A;
-    type Info = A::Info;
-    type Tag = usize;
+    type Request = A::Request;
+    type Tag = Tag;
 
     fn alloc(
         &mut self,
         owner: &mut A,
         device: &B::Device,
-        info: A::Info,
+        info: A::Request,
         reqs: Requirements,
-    ) -> Result<Block<B, usize>, MemoryError> {
+    ) -> Result<Block<B, Tag>, MemoryError> {
         if (1 << self.id.0) & reqs.type_mask == 0 {
             return Err(MemoryError::NoCompatibleMemoryType);
         }
@@ -93,28 +93,30 @@ where
         }
     }
 
-    fn free(&mut self, _owner: &mut A, _device: &B::Device, block: Block<B, usize>) {
+    fn free(&mut self, _owner: &mut A, _device: &B::Device, block: Block<B, Tag>) {
         assert_eq!(block.range().start % self.chunk_size, 0);
         assert_eq!(block.size(), self.chunk_size);
         let offset = block.range().start;
-        let block_index = unsafe { block.dispose() };
+        let block_memory: *const B::Memory = block.memory();
+        let Tag(block_index) = unsafe { block.dispose() };
         let offset = offset - self.blocks[block_index].1;
+        assert!(::std::ptr::eq(self.blocks[block_index].0.memory(), block_memory));
         let chunk_index = offset / self.chunk_size;
         self.free.push_front((block_index, chunk_index));
     }
 
-    fn is_unused(&self) -> bool {
-        self.count() == self.free.len()
+    fn is_used(&self) -> bool {
+        self.count() != self.free.len()
     }
 
     fn dispose(mut self, owner: &mut A, device: &B::Device) -> Result<(), Self> {
-        if self.is_unused() {
+        if self.is_used() {
+            Err(self)
+        } else {
             for (block, _) in self.blocks.drain(..) {
                 owner.free(device, block);
             }
             Ok(())
-        } else {
-            Err(self)
         }
     }
 }
@@ -203,16 +205,16 @@ where
     A: MemoryAllocator<B>,
 {
     type Owner = A;
-    type Info = A::Info;
-    type Tag = usize;
+    type Request = A::Request;
+    type Tag = Tag;
 
     fn alloc(
         &mut self,
         owner: &mut A,
         device: &B::Device,
-        info: A::Info,
+        info: A::Request,
         reqs: Requirements,
-    ) -> Result<Block<B, usize>, MemoryError> {
+    ) -> Result<Block<B, Self::Tag>, MemoryError> {
         if reqs.size > self.max_chunk_size {
             return Err(MemoryError::OutOfMemory);
         }
@@ -221,23 +223,29 @@ where
         self.nodes[index as usize].alloc(owner, device, info, reqs)
     }
 
-    fn free(&mut self, owner: &mut A, device: &B::Device, block: Block<B, usize>) {
+    fn free(&mut self, owner: &mut A, device: &B::Device, block: Block<B, Self::Tag>) {
         let index = self.pick_node(block.size());
         self.nodes[index as usize].free(owner, device, block);
     }
 
-    fn is_unused(&self) -> bool {
-        self.nodes.iter().all(ChunkedNode::is_unused)
+    fn is_used(&self) -> bool {
+        self.nodes.iter().any(ChunkedNode::is_used)
     }
 
     fn dispose(mut self, owner: &mut A, device: &B::Device) -> Result<(), Self> {
-        if self.is_unused() {
+        if self.is_used() {
+            Err(self)
+        } else {
             for node in self.nodes.drain(..) {
                 node.dispose(owner, device).unwrap();
             }
             Ok(())
-        } else {
-            Err(self)
         }
     }
 }
+
+
+/// Opaque type for `Block` tag.
+/// `ChunkedAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
+#[derive(Debug, Clone, Copy)]
+pub struct Tag(usize);

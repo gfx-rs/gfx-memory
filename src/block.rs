@@ -90,53 +90,54 @@ where
     /// Push additional tag value to this block.
     /// Tags form a stack - e.g. LIFO
     pub fn push_tag<Y>(self, value: Y) -> Block<B, (Y, T)> {
-        let Block {
-            relevant,
-            memory,
-            tag,
-            range,
-        } = self;
         Block {
-            relevant,
-            memory,
-            tag: (value, tag),
-            range,
+            relevant: self.relevant,
+            memory: self.memory,
+            tag: (value, self.tag),
+            range: self.range,
+        }
+    }
+
+    /// Convert tag value using specified function.
+    /// Tags form a stack - e.g. LIFO
+    pub fn convert_tag<F, Y>(self, f: F) -> Block<B, Y>
+    where
+        F: FnOnce(T) -> Y
+    {
+        Block {
+            relevant: self.relevant,
+            memory: self.memory,
+            tag: f(self.tag),
+            range: self.range,
         }
     }
 
     /// Replace tag attached to this block
     pub fn replace_tag<Y>(self, value: Y) -> (Block<B, Y>, T) {
-        let Block {
-            relevant,
-            memory,
-            tag,
-            range,
-        } = self;
         (
             Block {
-                relevant,
-                memory,
+                relevant: self.relevant,
+                memory: self.memory,
                 tag: value,
-                range,
+                range: self.range,
             },
-            tag,
+            self.tag,
         )
+    }
+
+    /// Take tag attached to this block leaving `()` in its place.
+    pub fn take_tag(self) -> (Block<B, ()>, T) {
+        self.replace_tag(())
     }
 
     /// Set tag to this block.
     /// Drops old tag.
     pub fn set_tag<Y>(self, value: Y) -> Block<B, Y> {
-        let Block {
-            relevant,
-            memory,
-            range,
-            ..
-        } = self;
         Block {
-            relevant,
-            memory,
+            relevant: self.relevant,
+            memory: self.memory,
             tag: value,
-            range,
+            range: self.range,
         }
     }
 
@@ -158,27 +159,14 @@ where
     /// Pop top tag value from this block
     /// Tags form a stack - e.g. LIFO
     pub fn pop_tag(self) -> (Block<B, T>, Y) {
-        let Block { .. } = self;
-        let Block {
-            relevant,
-            memory,
-            tag: (value, tag),
-            range,
-        } = self;
         (
             Block {
-                relevant,
-                memory,
-                tag,
-                range,
+                relevant: self.relevant,
+                memory: self.memory,
+                tag: self.tag.1,
+                range: self.range,
             },
-            value,
+            self.tag.0,
         )
-    }
-
-    /// Pop and drop top tag value from this block
-    /// Tags form a stack - e.g. LIFO
-    pub fn drop_tag(self) -> Block<B, T> {
-        self.pop_tag().0
     }
 }

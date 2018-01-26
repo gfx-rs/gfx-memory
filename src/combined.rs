@@ -59,50 +59,46 @@ impl<B> MemoryAllocator<B> for CombinedAllocator<B>
 where
     B: Backend,
 {
-    type Info = Type;
-    type Tag = (Type, usize);
+    type Request = Type;
+    type Tag = Tag;
 
     fn alloc(
         &mut self,
         device: &B::Device,
         info: Type,
         reqs: Requirements,
-    ) -> Result<Block<B, (Type, usize)>, MemoryError> {
+    ) -> Result<Block<B, Tag>, MemoryError> {
         match info {
             Type::ShortLive => self.arenas
-                .alloc(&mut self.root, device, (), reqs),
+                .alloc(&mut self.root, device, (), reqs)
+                .map(|block| block.convert_tag(Tag::Arena)),
             Type::General => {
                 if reqs.size > self.chunks.max_chunk_size() {
                     self.root
                         .alloc(device, (), reqs)
-                        .map(|block| block.set_tag(0))
+                        .map(|block| block.set_tag(Tag::Root))
                 } else {
                     self.chunks
                         .alloc(&mut self.root, device, (), reqs)
-                }
-            }
-        }
-        .map(|block| block.push_tag(info))
-    }
-
-    fn free(&mut self, device: &B::Device, block: Block<B, (Type, usize)>) {
-        let (block, ty) = block.pop_tag();
-        match ty {
-            Type::ShortLive => self.arenas.free(&mut self.root, device, block),
-            Type::General => {
-                if block.size() > self.chunks.max_chunk_size() {
-                    self.root.free(device, block.set_tag(()));
-                } else {
-                    self.chunks.free(&mut self.root, device, block);
+                        .map(|block| block.convert_tag(Tag::Chunked))
                 }
             }
         }
     }
 
-    fn is_unused(&self) -> bool {
-        let unused = self.arenas.is_unused() && self.chunks.is_unused();
-        assert_eq!(unused, self.root.is_unused());
-        unused
+    fn free(&mut self, device: &B::Device, block: Block<B, Tag>) {
+        let (block, tag) = block.take_tag();
+        match tag {
+            Tag::Arena(tag) => self.arenas.free(&mut self.root, device, block.set_tag(tag)),
+            Tag::Chunked(tag) => self.chunks.free(&mut self.root, device, block.set_tag(tag)),
+            Tag::Root => self.root.free(device, block),
+        }
+    }
+
+    fn is_used(&self) -> bool {
+        let used = self.arenas.is_used() || self.chunks.is_used();
+        assert_eq!(used, self.root.is_used());
+        used
     }
 
     fn dispose(mut self, device: &B::Device) -> Result<(), Self> {
@@ -129,4 +125,14 @@ where
             Ok(())
         }
     }
+}
+
+
+/// Opaque type for `Block` tag.
+/// `ChunkedAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
+#[derive(Debug, Clone, Copy)]
+pub enum Tag {
+    Arena(::arena::Tag),
+    Chunked(::chunked::Tag),
+    Root,
 }

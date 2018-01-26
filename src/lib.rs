@@ -66,7 +66,7 @@ impl Error for MemoryError {
 /// Trait that manage memory allocations from `Device`.
 pub trait MemoryAllocator<B: Backend>: Debug {
     /// Information required to allocate block.
-    type Info;
+    type Request;
 
     /// This allocator will place a tag of this type on the block.
     type Tag: Debug + Copy + Send + Sync;
@@ -75,7 +75,7 @@ pub trait MemoryAllocator<B: Backend>: Debug {
     fn alloc(
         &mut self,
         device: &B::Device,
-        info: Self::Info,
+        info: Self::Request,
         reqs: Requirements,
     ) -> Result<Block<B, Self::Tag>, MemoryError>;
 
@@ -84,9 +84,9 @@ pub trait MemoryAllocator<B: Backend>: Debug {
     /// Device must be the same that was used during allocation.
     fn free(&mut self, device: &B::Device, block: Block<B, Self::Tag>);
 
-    /// Check if all blocks allocated from this allocator are freed.
-    /// If this function returns `true` than subsequent call to `dispose` must return `Ok(())`
-    fn is_unused(&self) -> bool;
+    /// Check if not all blocks allocated from this allocator are freed.
+    /// If this function returns `false` than subsequent call to `dispose` must return `Ok(())`
+    fn is_used(&self) -> bool;
 
     /// Try to dispose of this allocator.
     /// It will result in `Err(self)` if is in use.
@@ -101,9 +101,12 @@ pub trait MemorySubAllocator<B: Backend> {
     type Owner;
 
     /// Information required to allocate block.
-    type Info;
+    type Request;
 
     /// This allocator will place a tag of this type on the block.
+    /// It is intended to use by allocator in `free` method.
+    /// Hence it's usually opaque type.
+    /// User doesn't need to touch it.
     type Tag: Debug + Copy + Send + Sync;
 
     /// Allocate block of memory from this allocator.
@@ -115,7 +118,7 @@ pub trait MemorySubAllocator<B: Backend> {
         &mut self,
         owner: &mut Self::Owner,
         device: &B::Device,
-        info: Self::Info,
+        info: Self::Request,
         reqs: Requirements,
     ) -> Result<Block<B, Self::Tag>, MemoryError>;
 
@@ -125,9 +128,9 @@ pub trait MemorySubAllocator<B: Backend> {
     /// It may choose to free inner block allocated from `owner`.
     fn free(&mut self, owner: &mut Self::Owner, device: &B::Device, block: Block<B, Self::Tag>);
 
-    /// Check if all blocks allocated from this allocator are freed.
-    /// If this function returns `true` than subsequent call to `dispose` must return `Ok(())`
-    fn is_unused(&self) -> bool;
+    /// Check if not all blocks allocated from this allocator are freed.
+    /// If this function returns `false` than subsequent call to `dispose` must return `Ok(())`
+    fn is_used(&self) -> bool;
 
     /// Try to dispose of this allocator.
     /// It will result in `Err(self)` if is in use.

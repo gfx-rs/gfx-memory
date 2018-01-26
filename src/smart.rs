@@ -76,15 +76,15 @@ impl<B> MemoryAllocator<B> for SmartAllocator<B>
 where
     B: Backend,
 {
-    type Info = (Type, Properties);
-    type Tag = (usize, (Type, usize));
+    type Request = (Type, Properties);
+    type Tag = Tag;
 
     fn alloc(
         &mut self,
         device: &B::Device,
         (ty, prop): (Type, Properties),
         reqs: Requirements,
-    ) -> Result<Block<B, Self::Tag>, MemoryError> {
+    ) -> Result<Block<B, Tag>, MemoryError> {
         let ref mut heaps = self.heaps;
         let allocators = self.allocators.iter_mut().enumerate();
 
@@ -109,27 +109,32 @@ where
         let block = allocator.alloc(device, ty, reqs)?;
         heaps[memory_type.heap_index].alloc(block.size());
 
-        Ok(block.push_tag(index))
+        Ok(block.convert_tag(|tag| Tag(index, tag)))
     }
 
-    fn free(&mut self, device: &B::Device, block: Block<B, Self::Tag>) {
-        let (block, index) = block.pop_tag();
+    fn free(&mut self, device: &B::Device, block: Block<B, Tag>) {
+        let (block, Tag(index, tag)) = block.take_tag();
         self.heaps[self.allocators[index].0.heap_index].free(block.size());
-        self.allocators[index].1.free(device, block);
+        self.allocators[index].1.free(device, block.set_tag(tag));
     }
 
-    fn is_unused(&self) -> bool {
-        self.allocators.iter().all(|&(_, ref allocator)| allocator.is_unused())
+    fn is_used(&self) -> bool {
+        self.allocators.iter().any(|&(_, ref allocator)| allocator.is_used())
     }
 
     fn dispose(mut self, device: &B::Device) -> Result<(), Self> {
-        if self.is_unused() {
+        if self.is_used() {
+            Err(self)
+        } else {
             for (_, allocator) in self.allocators.drain(..) {
                 allocator.dispose(device).unwrap();
             }
             Ok(())
-        } else {
-            Err(self)
         }
     }
 }
+
+/// Opaque type for `Block` tag.
+/// `ChunkedAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
+#[derive(Debug, Clone, Copy)]
+pub struct Tag(usize, ::combined::Tag);
