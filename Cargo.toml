@@ -4,6 +4,7 @@ version = "0.0.0"
 authors = ["omni-viral <scareaangel@gmail.com>"]
 description = "memory manager for gfx_hal"
 repository = "https://github.com/omni-viral/gfx_mem.git"
+license = "MIT/Apache-2.0"
 
 [features]
 checks = []
