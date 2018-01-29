@@ -6,7 +6,7 @@ use gfx_hal::buffer::{Usage as BufferUsage, CreationError as BufferCreationError
 use gfx_hal::format::Format;
 use gfx_hal::image::{Kind, Level, Usage as ImageUsage, CreationError as ImageCreationError};
 
-use block::{Block, TaggedBlock};
+use block::Block;
 
 use {MemoryAllocator, MemoryError};
 
@@ -62,34 +62,30 @@ pub trait Factory<B: Backend> {
     );
 }
 
-pub struct Item<B: Backend, I, T> {
+#[derive(Debug)]
+pub struct Item<I, B> {
     raw: I,
-    block: TaggedBlock<B, T>,
+    block: B,
 }
 
-impl<B, I, T> Borrow<I> for Item<B, I, T>
-where
-    B: Backend,
-{
+impl<I, B> Borrow<I> for Item<I, B> {
     fn borrow(&self) -> &I {
         &self.raw
     }
 }
 
-impl<B, I, T> BorrowMut<I> for Item<B, I, T>
-where
-    B: Backend,
-{
+impl<I, B> BorrowMut<I> for Item<I, B> {
     fn borrow_mut(&mut self) -> &mut I {
         &mut self.raw
     }
 }
 
-impl<B, I, T> Block<B> for Item<B, I, T>
+impl<X, I, B> Block<X> for Item<I, B>
 where
-    B: Backend,
+    X: Backend,
+    B: Block<X>,
 {
-    fn memory(&self) -> &B::Memory {
+    fn memory(&self) -> &X::Memory {
         self.block.memory()
     }
 
@@ -129,8 +125,8 @@ where
     B: Backend,
     A: MemoryAllocator<B>,
 {
-    type Buffer = Item<B, B::Buffer, A::Tag>;
-    type Image = Item<B, B::Image, A::Tag>;
+    type Buffer = Item<B::Buffer, A::Block>;
+    type Image = Item<B::Image, A::Block>;
     type BufferRequest = A::Request;
     type ImageRequest = A::Request;
     type Error = FactoryError;
@@ -141,7 +137,7 @@ where
         request: A::Request,
         size: u64,
         usage: BufferUsage,
-    ) -> Result<Item<B, B::Buffer, A::Tag>, FactoryError>
+    ) -> Result<Item<B::Buffer, A::Block>, FactoryError>
     {
         let ubuf = device.create_buffer(size, usage)?;
         let reqs = device.get_buffer_requirements(&ubuf);
@@ -161,7 +157,7 @@ where
         level: Level,
         format: Format,
         usage: ImageUsage,
-    ) -> Result<Item<B, B::Image, A::Tag>, FactoryError> {
+    ) -> Result<Item<B::Image, A::Block>, FactoryError> {
         let uimg = device.create_image(kind, level, format, usage)?;
         let reqs = device.get_image_requirements(&uimg);
         let block = self.alloc(device, request, reqs)?;

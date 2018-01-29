@@ -37,8 +37,8 @@ impl<B> MemoryAllocator<B> for RootAllocator<B>
 where
     B: Backend,
 {
-    type Tag = ();
     type Request = ();
+    type Block = TaggedBlock<B, ()>;
 
     fn alloc(
         &mut self,

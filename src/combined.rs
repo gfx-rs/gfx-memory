@@ -66,7 +66,7 @@ where
     B: Backend,
 {
     type Request = Type;
-    type Tag = Tag;
+    type Block = TaggedBlock<B, Tag>;
 
     fn alloc(
         &mut self,

@@ -11,7 +11,7 @@ use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
 struct ArenaNode<B: Backend, A: MemoryAllocator<B>> {
     used: u64,
     freed: u64,
-    block: TaggedBlock<B, A::Tag>,
+    block: A::Block,
 }
 
 impl<B, A> ArenaNode<B, A>
@@ -19,7 +19,7 @@ where
     B: Backend,
     A: MemoryAllocator<B>,
 {
-    fn new(block: TaggedBlock<B, A::Tag>) -> Self {
+    fn new(block: A::Block) -> Self {
         ArenaNode {
             used: 0,
             freed: 0,
@@ -140,7 +140,7 @@ where
 {
     type Owner = A;
     type Request = A::Request;
-    type Tag = Tag;
+    type Block = TaggedBlock<B, Tag>;
 
     fn alloc(
         &mut self,

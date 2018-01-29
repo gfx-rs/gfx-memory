@@ -69,8 +69,8 @@ pub trait MemoryAllocator<B: Backend>: Debug {
     /// Information required to allocate block.
     type Request;
 
-    /// This allocator will place a tag of this type on the block.
-    type Tag: Debug + Copy + Send + Sync;
+    /// Allocator will allocate blocks of this type.
+    type Block: Block<B> + Debug + Send + Sync;
 
     /// Allocate block of memory.
     fn alloc(
@@ -78,12 +78,12 @@ pub trait MemoryAllocator<B: Backend>: Debug {
         device: &B::Device,
         request: Self::Request,
         reqs: Requirements,
-    ) -> Result<TaggedBlock<B, Self::Tag>, MemoryError>;
+    ) -> Result<Self::Block, MemoryError>;
 
     /// Free block of memory.
     /// TaggedBlock must be allocated from this allocator.
     /// Device must be the same that was used during allocation.
-    fn free(&mut self, device: &B::Device, block: TaggedBlock<B, Self::Tag>);
+    fn free(&mut self, device: &B::Device, block: Self::Block);
 
     /// Check if not all blocks allocated from this allocator are freed.
     /// If this function returns `false` than subsequent call to `dispose` must return `Ok(())`
@@ -105,11 +105,8 @@ pub trait MemorySubAllocator<B: Backend> {
     /// Information required to allocate block.
     type Request;
 
-    /// This allocator will place a tag of this type on the block.
-    /// It is intended to use by allocator in `free` method.
-    /// Hence it's usually opaque type.
-    /// User doesn't need to touch it.
-    type Tag: Debug + Copy + Send + Sync;
+    /// Allocator will allocate blocks of this type.
+    type Block: Block<B> + Debug + Send + Sync;
 
     /// Allocate block of memory from this allocator.
     /// This allocator will use `owner` to get memory in bigger chunks.
@@ -122,13 +119,13 @@ pub trait MemorySubAllocator<B: Backend> {
         device: &B::Device,
         request: Self::Request,
         reqs: Requirements,
-    ) -> Result<TaggedBlock<B, Self::Tag>, MemoryError>;
+    ) -> Result<Self::Block, MemoryError>;
 
     /// Free block of memory.
     /// TaggedBlock must be allocated from this allocator.
     /// Device must be the same that was used during allocation.
     /// It may choose to free inner block allocated from `owner`.
-    fn free(&mut self, owner: &mut Self::Owner, device: &B::Device, block: TaggedBlock<B, Self::Tag>);
+    fn free(&mut self, owner: &mut Self::Owner, device: &B::Device, block: Self::Block);
 
     /// Check if not all blocks allocated from this allocator are freed.
     /// If this function returns `false` than subsequent call to `dispose` must return `Ok(())`

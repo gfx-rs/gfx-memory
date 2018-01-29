@@ -100,7 +100,7 @@ where
     /// It must be the allocator this block was allocated from.
     pub fn free<A>(self, origin: &mut A, device: &B::Device)
     where
-        A: MemoryAllocator<B, Tag = T>,
+        A: MemoryAllocator<B, Block = Self>,
         T: Debug + Copy + Send + Sync,
     {
         origin.free(device, self);

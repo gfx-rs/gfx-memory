@@ -12,7 +12,7 @@ struct ChunkedNode<B: Backend, A: MemoryAllocator<B>> {
     chunks_per_block: usize,
     chunk_size: u64,
     free: VecDeque<(usize, u64)>,
-    blocks: Vec<(TaggedBlock<B, A::Tag>, u64)>,
+    blocks: Vec<(A::Block, u64)>,
 }
 
 impl<B, A> ChunkedNode<B, A>
@@ -77,7 +77,7 @@ where
 {
     type Owner = A;
     type Request = A::Request;
-    type Tag = Tag;
+    type Block = TaggedBlock<B, Tag>;
 
     fn alloc(
         &mut self,
@@ -219,7 +219,7 @@ where
 {
     type Owner = A;
     type Request = A::Request;
-    type Tag = Tag;
+    type Block = TaggedBlock<B, Tag>;
 
     fn alloc(
         &mut self,
@@ -227,7 +227,7 @@ where
         device: &B::Device,
         request: A::Request,
         reqs: Requirements,
-    ) -> Result<TaggedBlock<B, Self::Tag>, MemoryError> {
+    ) -> Result<TaggedBlock<B, Tag>, MemoryError> {
         if reqs.size > self.max_chunk_size {
             return Err(MemoryError::OutOfMemory);
         }
@@ -236,7 +236,7 @@ where
         self.nodes[index as usize].alloc(owner, device, request, reqs)
     }
 
-    fn free(&mut self, owner: &mut A, device: &B::Device, block: TaggedBlock<B, Self::Tag>) {
+    fn free(&mut self, owner: &mut A, device: &B::Device, block: TaggedBlock<B, Tag>) {
         let index = self.pick_node(block.size());
         self.nodes[index as usize].free(owner, device, block);
     }
