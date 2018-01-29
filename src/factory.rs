@@ -1,4 +1,6 @@
 use std::borrow::{Borrow, BorrowMut};
+use std::error::Error;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::ops::Range;
 
 use gfx_hal::{Backend, Device};
@@ -99,6 +101,7 @@ where
 
 
 /// Possible errors that may be returned from allocator-as-factory
+#[derive(Debug)]
 pub enum FactoryError {
     /// Memory error.
     MemoryError(MemoryError),
@@ -125,6 +128,34 @@ impl From<BufferCreationError> for FactoryError {
 impl From<ImageCreationError> for FactoryError {
     fn from(error: ImageCreationError) -> Self {
         FactoryError::ImageCreationError(error)
+    }
+}
+
+impl Display for FactoryError {
+    fn fmt(&self, fmt: &mut Formatter) -> FmtResult {
+        match *self {
+            FactoryError::MemoryError(ref error) => write!(fmt, "{}", error),
+            FactoryError::BufferCreationError(ref error) => write!(fmt, "{}", error),
+            FactoryError::ImageCreationError(ref error) => write!(fmt, "{}", error),
+        }
+    }
+}
+
+impl Error for FactoryError {
+    fn description(&self) -> &str {
+        match *self {
+            FactoryError::MemoryError(_) => "Memory error in factory",
+            FactoryError::BufferCreationError(_) => "Buffer creation error in factory",
+            FactoryError::ImageCreationError(_) => "Image creation error in factory",
+        }
+    }
+
+    fn cause(&self) -> Option<&Error> {
+        match *self {
+            FactoryError::MemoryError(ref error) => Some(error),
+            FactoryError::BufferCreationError(ref error) => Some(error),
+            FactoryError::ImageCreationError(ref error) => Some(error),
+        }
     }
 }
 
