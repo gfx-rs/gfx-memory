@@ -30,6 +30,7 @@ pub use arena::ArenaAllocator;
 pub use block::{Block, TaggedBlock};
 pub use chunked::ChunkedAllocator;
 pub use combined::{CombinedAllocator, Type};
+pub use factory::{Factory, FactoryError, Item};
 pub use root::RootAllocator;
 pub use smart::SmartAllocator;
 
