@@ -1,10 +1,11 @@
 use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
 
-use {Block, MemoryError, MemoryAllocator, MemorySubAllocator};
 use arena::ArenaAllocator;
+use block::{TaggedBlock};
 use chunked::ChunkedAllocator;
 use root::RootAllocator;
+use {MemoryAllocator, MemoryError, MemorySubAllocator};
 
 /// Type of sub-allocator used.
 #[derive(Clone, Copy, Debug)]
@@ -45,7 +46,12 @@ where
         CombinedAllocator {
             root: RootAllocator::new(memory_type_id),
             arenas: ArenaAllocator::new(arena_size, memory_type_id),
-            chunks: ChunkedAllocator::new(chunks_per_block, min_chunk_size, max_chunk_size, memory_type_id),
+            chunks: ChunkedAllocator::new(
+                chunks_per_block,
+                min_chunk_size,
+                max_chunk_size,
+                memory_type_id,
+            ),
         }
     }
 
@@ -65,10 +71,10 @@ where
     fn alloc(
         &mut self,
         device: &B::Device,
-        info: Type,
+        request: Type,
         reqs: Requirements,
-    ) -> Result<Block<B, Tag>, MemoryError> {
-        match info {
+    ) -> Result<TaggedBlock<B, Tag>, MemoryError> {
+        match request {
             Type::ShortLived => self.arenas
                 .alloc(&mut self.root, device, (), reqs)
                 .map(|block| block.convert_tag(Tag::Arena)),
@@ -86,7 +92,7 @@ where
         }
     }
 
-    fn free(&mut self, device: &B::Device, block: Block<B, Tag>) {
+    fn free(&mut self, device: &B::Device, block: TaggedBlock<B, Tag>) {
         let (block, tag) = block.take_tag();
         match tag {
             Tag::Arena(tag) => self.arenas.free(&mut self.root, device, block.set_tag(tag)),
@@ -112,8 +118,17 @@ where
         let chunks = self.chunks.dispose(&mut self.root, device);
 
         if arenas.is_err() || chunks.is_err() {
-            let arenas = arenas.err().unwrap_or_else(|| ArenaAllocator::new(arena_size, memory_type_id));
-            let chunks = chunks.err().unwrap_or_else(|| ChunkedAllocator::new(chunks_per_block, min_chunk_size, max_chunk_size, memory_type_id));
+            let arenas = arenas
+                .err()
+                .unwrap_or_else(|| ArenaAllocator::new(arena_size, memory_type_id));
+            let chunks = chunks.err().unwrap_or_else(|| {
+                ChunkedAllocator::new(
+                    chunks_per_block,
+                    min_chunk_size,
+                    max_chunk_size,
+                    memory_type_id,
+                )
+            });
 
             Err(CombinedAllocator {
                 root: self.root,
@@ -127,8 +142,7 @@ where
     }
 }
 
-
-/// Opaque type for `Block` tag.
+/// Opaque type for `TaggedBlock` tag.
 /// `ChunkedAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
 #[derive(Debug, Clone, Copy)]
 pub enum Tag {

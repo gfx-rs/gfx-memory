@@ -3,7 +3,8 @@ use std::collections::VecDeque;
 use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
 
-use {shift_for_alignment, Block, MemoryError, MemoryAllocator, MemorySubAllocator};
+use block::{Block, TaggedBlock};
+use {shift_for_alignment, MemoryAllocator, MemoryError, MemorySubAllocator};
 
 #[derive(Debug)]
 struct ChunkedNode<B: Backend, A: MemoryAllocator<B>> {
@@ -11,7 +12,7 @@ struct ChunkedNode<B: Backend, A: MemoryAllocator<B>> {
     chunks_per_block: usize,
     chunk_size: u64,
     free: VecDeque<(usize, u64)>,
-    blocks: Vec<(Block<B, A::Tag>, u64)>,
+    blocks: Vec<(TaggedBlock<B, A::Tag>, u64)>,
 }
 
 impl<B, A> ChunkedNode<B, A>
@@ -33,13 +34,18 @@ where
         self.blocks.len() * self.chunks_per_block
     }
 
-    fn grow(&mut self, owner: &mut A, device: &B::Device, info: A::Request) -> Result<(), MemoryError> {
+    fn grow(
+        &mut self,
+        owner: &mut A,
+        device: &B::Device,
+        request: A::Request,
+    ) -> Result<(), MemoryError> {
         let reqs = Requirements {
             type_mask: 1 << self.id.0,
             size: self.chunk_size * self.chunks_per_block as u64,
             alignment: self.chunk_size,
         };
-        let block = owner.alloc(device, info, reqs)?;
+        let block = owner.alloc(device, request, reqs)?;
         let offset = shift_for_alignment(reqs.alignment, block.range().start);
 
         assert!(self.chunks_per_block as u64 <= (block.size() - offset) / self.chunk_size);
@@ -52,10 +58,10 @@ where
         Ok(())
     }
 
-    fn alloc_no_grow(&mut self) -> Option<Block<B, Tag>> {
+    fn alloc_no_grow(&mut self) -> Option<TaggedBlock<B, Tag>> {
         self.free.pop_front().map(|(block_index, chunk_index)| {
             let offset = self.blocks[block_index].1 + chunk_index * self.chunk_size;
-            let block = Block::new(
+            let block = TaggedBlock::new(
                 self.blocks[block_index].0.memory(),
                 offset..self.chunk_size + offset,
             );
@@ -77,9 +83,9 @@ where
         &mut self,
         owner: &mut A,
         device: &B::Device,
-        info: A::Request,
+        request: A::Request,
         reqs: Requirements,
-    ) -> Result<Block<B, Tag>, MemoryError> {
+    ) -> Result<TaggedBlock<B, Tag>, MemoryError> {
         if (1 << self.id.0) & reqs.type_mask == 0 {
             return Err(MemoryError::NoCompatibleMemoryType);
         }
@@ -88,19 +94,22 @@ where
         if let Some(block) = self.alloc_no_grow() {
             Ok(block)
         } else {
-            self.grow(owner, device, info)?;
+            self.grow(owner, device, request)?;
             Ok(self.alloc_no_grow().unwrap())
         }
     }
 
-    fn free(&mut self, _owner: &mut A, _device: &B::Device, block: Block<B, Tag>) {
+    fn free(&mut self, _owner: &mut A, _device: &B::Device, block: TaggedBlock<B, Tag>) {
         assert_eq!(block.range().start % self.chunk_size, 0);
         assert_eq!(block.size(), self.chunk_size);
         let offset = block.range().start;
         let block_memory: *const B::Memory = block.memory();
         let Tag(block_index) = unsafe { block.dispose() };
         let offset = offset - self.blocks[block_index].1;
-        assert!(::std::ptr::eq(self.blocks[block_index].0.memory(), block_memory));
+        assert!(::std::ptr::eq(
+            self.blocks[block_index].0.memory(),
+            block_memory
+        ));
         let chunk_index = offset / self.chunk_size;
         self.free.push_front((block_index, chunk_index));
     }
@@ -121,7 +130,6 @@ where
     }
 }
 
-
 /// Allocator that rounds up requested size to the closes power of 2
 /// and returns a block from the list of equal sized chunks.
 #[derive(Debug)]
@@ -139,12 +147,17 @@ where
     A: MemoryAllocator<B>,
 {
     /// Create new chunk-list allocator.
-    /// 
+    ///
     /// # Panics
     ///
     /// Panics if `chunk_size` or `min_chunk_size` are not power of 2.
     ///
-    pub fn new(chunks_per_block: usize, min_chunk_size: u64, max_chunk_size: u64, id: MemoryTypeId) -> Self {
+    pub fn new(
+        chunks_per_block: usize,
+        min_chunk_size: u64,
+        max_chunk_size: u64,
+        id: MemoryTypeId,
+    ) -> Self {
         ChunkedAllocator {
             id,
             chunks_per_block,
@@ -194,7 +207,7 @@ where
         assert!(chunk_size(size) <= max_chunk_size);
         let len = self.nodes.len() as u8;
         self.nodes.extend(
-            (len .. size + 1).map(|index| ChunkedNode::new(chunk_size(index), chunks_per_block, id))
+            (len..size + 1).map(|index| ChunkedNode::new(chunk_size(index), chunks_per_block, id)),
         );
     }
 }
@@ -212,18 +225,18 @@ where
         &mut self,
         owner: &mut A,
         device: &B::Device,
-        info: A::Request,
+        request: A::Request,
         reqs: Requirements,
-    ) -> Result<Block<B, Self::Tag>, MemoryError> {
+    ) -> Result<TaggedBlock<B, Self::Tag>, MemoryError> {
         if reqs.size > self.max_chunk_size {
             return Err(MemoryError::OutOfMemory);
         }
         let index = self.pick_node(reqs.size);
         self.grow(index + 1);
-        self.nodes[index as usize].alloc(owner, device, info, reqs)
+        self.nodes[index as usize].alloc(owner, device, request, reqs)
     }
 
-    fn free(&mut self, owner: &mut A, device: &B::Device, block: Block<B, Self::Tag>) {
+    fn free(&mut self, owner: &mut A, device: &B::Device, block: TaggedBlock<B, Self::Tag>) {
         let index = self.pick_node(block.size());
         self.nodes[index as usize].free(owner, device, block);
     }
@@ -244,8 +257,7 @@ where
     }
 }
 
-
-/// Opaque type for `Block` tag.
+/// Opaque type for `TaggedBlock` tag.
 /// `ChunkedAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
 #[derive(Debug, Clone, Copy)]
 pub struct Tag(usize);

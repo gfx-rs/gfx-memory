@@ -1,8 +1,9 @@
 use gfx_hal::{Backend, MemoryProperties, MemoryType, MemoryTypeId};
 use gfx_hal::memory::{Properties, Requirements};
 
-use {Block, MemoryError, MemoryAllocator};
+use block::{Block, TaggedBlock};
 use combined::{CombinedAllocator, Type};
+use {MemoryAllocator, MemoryError};
 
 #[derive(Debug)]
 struct Heap {
@@ -84,7 +85,7 @@ where
         device: &B::Device,
         (ty, prop): (Type, Properties),
         reqs: Requirements,
-    ) -> Result<Block<B, Tag>, MemoryError> {
+    ) -> Result<TaggedBlock<B, Tag>, MemoryError> {
         let ref mut heaps = self.heaps;
         let allocators = self.allocators.iter_mut().enumerate();
 
@@ -96,8 +97,7 @@ where
             })
             .filter(|&(_, &mut (ref memory_type, _))| {
                 compatible_count += 1;
-                heaps[memory_type.heap_index].available()
-                    >= (reqs.size + reqs.alignment)
+                heaps[memory_type.heap_index].available() >= (reqs.size + reqs.alignment)
             })
             .next()
             .ok_or(MemoryError::from(if compatible_count == 0 {
@@ -112,14 +112,16 @@ where
         Ok(block.convert_tag(|tag| Tag(index, tag)))
     }
 
-    fn free(&mut self, device: &B::Device, block: Block<B, Tag>) {
+    fn free(&mut self, device: &B::Device, block: TaggedBlock<B, Tag>) {
         let (block, Tag(index, tag)) = block.take_tag();
         self.heaps[self.allocators[index].0.heap_index].free(block.size());
         self.allocators[index].1.free(device, block.set_tag(tag));
     }
 
     fn is_used(&self) -> bool {
-        self.allocators.iter().any(|&(_, ref allocator)| allocator.is_used())
+        self.allocators
+            .iter()
+            .any(|&(_, ref allocator)| allocator.is_used())
     }
 
     fn dispose(mut self, device: &B::Device) -> Result<(), Self> {
@@ -134,7 +136,7 @@ where
     }
 }
 
-/// Opaque type for `Block` tag.
+/// Opaque type for `TaggedBlock` tag.
 /// `ChunkedAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
 #[derive(Debug, Clone, Copy)]
 pub struct Tag(usize, ::combined::Tag);

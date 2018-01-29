@@ -22,11 +22,12 @@ mod arena;
 mod block;
 mod chunked;
 mod combined;
+mod factory;
 mod root;
 mod smart;
 
 pub use arena::ArenaAllocator;
-pub use block::Block;
+pub use block::{Block, TaggedBlock};
 pub use chunked::ChunkedAllocator;
 pub use combined::{CombinedAllocator, Type};
 pub use root::RootAllocator;
@@ -75,14 +76,14 @@ pub trait MemoryAllocator<B: Backend>: Debug {
     fn alloc(
         &mut self,
         device: &B::Device,
-        info: Self::Request,
+        request: Self::Request,
         reqs: Requirements,
-    ) -> Result<Block<B, Self::Tag>, MemoryError>;
+    ) -> Result<TaggedBlock<B, Self::Tag>, MemoryError>;
 
     /// Free block of memory.
-    /// Block must be allocated from this allocator.
+    /// TaggedBlock must be allocated from this allocator.
     /// Device must be the same that was used during allocation.
-    fn free(&mut self, device: &B::Device, block: Block<B, Self::Tag>);
+    fn free(&mut self, device: &B::Device, block: TaggedBlock<B, Self::Tag>);
 
     /// Check if not all blocks allocated from this allocator are freed.
     /// If this function returns `false` than subsequent call to `dispose` must return `Ok(())`
@@ -91,9 +92,10 @@ pub trait MemoryAllocator<B: Backend>: Debug {
     /// Try to dispose of this allocator.
     /// It will result in `Err(self)` if is in use.
     /// Allocators have to be disposed, dropping them might result in a panic.
-    fn dispose(self, device: &B::Device) -> Result<(), Self> where Self: Sized;
+    fn dispose(self, device: &B::Device) -> Result<(), Self>
+    where
+        Self: Sized;
 }
-
 
 /// Trait that allows to sub-allocate memory blocks from another allocator.
 pub trait MemorySubAllocator<B: Backend> {
@@ -113,20 +115,20 @@ pub trait MemorySubAllocator<B: Backend> {
     /// This allocator will use `owner` to get memory in bigger chunks.
     /// `owner` must always be the same for an instance.
     /// Memory of allocated blocks will satisfy requirements.
-    /// `info` may contain additional requirements and/or hints for allocation.
+    /// `request` may contain additional requirements and/or hints for allocation.
     fn alloc(
         &mut self,
         owner: &mut Self::Owner,
         device: &B::Device,
-        info: Self::Request,
+        request: Self::Request,
         reqs: Requirements,
-    ) -> Result<Block<B, Self::Tag>, MemoryError>;
+    ) -> Result<TaggedBlock<B, Self::Tag>, MemoryError>;
 
     /// Free block of memory.
-    /// Block must be allocated from this allocator.
+    /// TaggedBlock must be allocated from this allocator.
     /// Device must be the same that was used during allocation.
     /// It may choose to free inner block allocated from `owner`.
-    fn free(&mut self, owner: &mut Self::Owner, device: &B::Device, block: Block<B, Self::Tag>);
+    fn free(&mut self, owner: &mut Self::Owner, device: &B::Device, block: TaggedBlock<B, Self::Tag>);
 
     /// Check if not all blocks allocated from this allocator are freed.
     /// If this function returns `false` than subsequent call to `dispose` must return `Ok(())`
@@ -135,7 +137,9 @@ pub trait MemorySubAllocator<B: Backend> {
     /// Try to dispose of this allocator.
     /// It will result in `Err(self)` if is in use.
     /// Allocators usually will panic on drop.
-    fn dispose(self, owner: &mut Self::Owner, device: &B::Device) -> Result<(), Self> where Self: Sized;
+    fn dispose(self, owner: &mut Self::Owner, device: &B::Device) -> Result<(), Self>
+    where
+        Self: Sized;
 }
 
 /// Calculate shift from specified offset required to satisfy alignment.

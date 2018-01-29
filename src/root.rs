@@ -2,8 +2,10 @@ use std::marker::PhantomData;
 
 use gfx_hal::{Backend, Device, MemoryTypeId};
 use gfx_hal::memory::Requirements;
-use {Block, MemoryError, MemoryAllocator};
+
+use block::{Block, TaggedBlock};
 use relevant::Relevant;
+use {MemoryAllocator, MemoryError};
 
 /// Allocator that allocates memory directly from device.
 #[derive(Debug)]
@@ -43,14 +45,14 @@ where
         device: &B::Device,
         _: (),
         reqs: Requirements,
-    ) -> Result<Block<B, ()>, MemoryError> {
+    ) -> Result<TaggedBlock<B, ()>, MemoryError> {
         let memory = device.allocate_memory(self.id, reqs.size)?;
         let memory = Box::into_raw(Box::new(memory)); // Suboptimal
         self.allocations += 1;
-        Ok(Block::new(memory, 0..reqs.size))
+        Ok(TaggedBlock::new(memory, 0..reqs.size))
     }
 
-    fn free(&mut self, device: &B::Device, block: Block<B, ()>) {
+    fn free(&mut self, device: &B::Device, block: TaggedBlock<B, ()>) {
         assert_eq!(block.range().start, 0);
         device.free_memory(*unsafe { Box::from_raw(block.memory() as *const _ as *mut _) });
         unsafe { block.dispose() };

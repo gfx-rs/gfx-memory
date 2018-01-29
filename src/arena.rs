@@ -4,13 +4,14 @@ use std::mem::replace;
 use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
 
-use {alignment_shift, Block, MemoryError, MemoryAllocator, MemorySubAllocator};
+use block::{Block, TaggedBlock};
+use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
 
 #[derive(Debug)]
 struct ArenaNode<B: Backend, A: MemoryAllocator<B>> {
     used: u64,
     freed: u64,
-    block: Block<B, A::Tag>,
+    block: TaggedBlock<B, A::Tag>,
 }
 
 impl<B, A> ArenaNode<B, A>
@@ -18,7 +19,7 @@ where
     B: Backend,
     A: MemoryAllocator<B>,
 {
-    fn new(block: Block<B, A::Tag>) -> Self {
+    fn new(block: TaggedBlock<B, A::Tag>) -> Self {
         ArenaNode {
             used: 0,
             freed: 0,
@@ -26,7 +27,7 @@ where
         }
     }
 
-    fn alloc(&mut self, reqs: Requirements) -> Option<Block<B, ()>> {
+    fn alloc(&mut self, reqs: Requirements) -> Option<TaggedBlock<B, ()>> {
         let offset = self.block.range().start + self.used;
         let total_size = reqs.size + alignment_shift(reqs.alignment, offset);
 
@@ -34,11 +35,11 @@ where
             None
         } else {
             self.used += total_size;
-            Some(Block::new(self.block.memory(), offset..total_size + offset))
+            Some(TaggedBlock::new(self.block.memory(), offset..total_size + offset))
         }
     }
 
-    fn free(&mut self, block: Block<B, ()>) {
+    fn free(&mut self, block: TaggedBlock<B, ()>) {
         assert!(self.block.contains(&block));
         self.freed += block.size();
         unsafe { block.dispose() }
@@ -118,7 +119,7 @@ where
         &mut self,
         owner: &mut A,
         device: &B::Device,
-        info: A::Request,
+        request: A::Request,
         reqs: Requirements,
     ) -> Result<ArenaNode<B, A>, MemoryError> {
         let arena_size = ((reqs.size - 1) / self.arena_size + 1) * self.arena_size;
@@ -127,7 +128,7 @@ where
             size: arena_size,
             alignment: reqs.alignment,
         };
-        let arena_block = owner.alloc(device, info, arena_requirements)?;
+        let arena_block = owner.alloc(device, request, arena_requirements)?;
         Ok(ArenaNode::new(arena_block))
     }
 }
@@ -145,9 +146,9 @@ where
         &mut self,
         owner: &mut A,
         device: &B::Device,
-        info: A::Request,
+        request: A::Request,
         reqs: Requirements,
-    ) -> Result<Block<B, Tag>, MemoryError> {
+    ) -> Result<TaggedBlock<B, Tag>, MemoryError> {
         if (1 << self.id.0) & reqs.type_mask == 0 {
             return Err(MemoryError::NoCompatibleMemoryType);
         }
@@ -159,11 +160,11 @@ where
             }
         };
 
-        let mut node = self.allocate_node(owner, device, info, reqs)?;
+        let mut node = self.allocate_node(owner, device, request, reqs)?;
         let block = node.alloc(reqs).unwrap();
         if let Some(hot) = replace(&mut self.hot, Some(node)) {
             match hot.dispose(owner, device) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(hot) => self.nodes.push_back(hot),
             }
         };
@@ -171,7 +172,7 @@ where
         Ok(block.set_tag(Tag(count)))
     }
 
-    fn free(&mut self, owner: &mut A, device: &B::Device, block: Block<B, Tag>) {
+    fn free(&mut self, owner: &mut A, device: &B::Device, block: TaggedBlock<B, Tag>) {
         let (block, Tag(tag)) = block.replace_tag(());
         let index = (tag - self.freed) as usize;
 
@@ -207,8 +208,7 @@ where
     }
 }
 
-
-/// Opaque type for `Block` tag.
+/// Opaque type for `TaggedBlock` tag.
 /// `ArenaAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
 #[derive(Debug, Clone, Copy)]
 pub struct Tag(u64);
