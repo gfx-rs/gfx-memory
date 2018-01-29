@@ -90,7 +90,7 @@ pub trait MemoryAllocator<B: Backend>: Debug {
 
     /// Try to dispose of this allocator.
     /// It will result in `Err(self)` if is in use.
-    /// Allocators usually will panic on drop.
+    /// Allocators have to be disposed, dropping them might result in a panic.
     fn dispose(self, device: &B::Device) -> Result<(), Self> where Self: Sized;
 }
 

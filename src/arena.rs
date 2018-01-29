@@ -52,14 +52,13 @@ where
         if self.is_used() {
             Err(self)
         } else {
-            let ArenaNode { block, .. } = self;
-            owner.free(device, block);
+            owner.free(device, self.block);
             Ok(())
         }
     }
 }
 
-/// Linear allocator for short-living objects
+/// Linear allocator for short-lived objects
 #[derive(Debug)]
 pub struct ArenaAllocator<B: Backend, A: MemoryAllocator<B>> {
     id: MemoryTypeId,

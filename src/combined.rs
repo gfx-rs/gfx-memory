@@ -9,9 +9,9 @@ use root::RootAllocator;
 /// Type of sub-allocator used.
 #[derive(Clone, Copy, Debug)]
 pub enum Type {
-    /// For short-living objects.
+    /// For short-lived objects.
     /// Such as staging buffers.
-    ShortLive,
+    ShortLived,
 
     /// General purpose.
     General,
@@ -69,7 +69,7 @@ where
         reqs: Requirements,
     ) -> Result<Block<B, Tag>, MemoryError> {
         match info {
-            Type::ShortLive => self.arenas
+            Type::ShortLived => self.arenas
                 .alloc(&mut self.root, device, (), reqs)
                 .map(|block| block.convert_tag(Tag::Arena)),
             Type::General => {
