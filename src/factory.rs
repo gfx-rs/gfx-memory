@@ -49,12 +49,14 @@ pub trait Factory<B: Backend> {
         usage: ImageUsage,
     ) -> Result<Self::Image, Self::Error>;
 
+    /// Destroy buffer created by this factory.
     fn destroy_buffer(
         &mut self,
         device: &B::Device,
         buffer: Self::Buffer,
     );
 
+    /// Destroy image created by this factory.
     fn destroy_image(
         &mut self,
         device: &B::Device,
@@ -62,6 +64,7 @@ pub trait Factory<B: Backend> {
     );
 }
 
+/// Item produced by allocator-as-factory.
 #[derive(Debug)]
 pub struct Item<I, B> {
     raw: I,
@@ -97,8 +100,13 @@ where
 
 /// Possible errors that may be returned from allocator-as-factory
 pub enum FactoryError {
+    /// Memory error.
     MemoryError(MemoryError),
+
+    /// Buffer creations error.
     BufferCreationError(BufferCreationError),
+    
+    /// Image creation error.
     ImageCreationError(ImageCreationError),
 }
 
