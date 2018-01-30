@@ -70,6 +70,7 @@ pub trait Factory<B: Backend> {
 #[derive(Debug)]
 pub struct Item<I, B> {
     raw: I,
+    size: u64,
     block: B,
 }
 
@@ -95,7 +96,8 @@ where
     }
 
     fn range(&self) -> Range<u64> {
-        self.block.range()
+        let offset = self.block.range().start;
+        offset .. offset + self.size
     }
 }
 
@@ -185,6 +187,7 @@ where
         Ok(Item {
             raw: buf,
             block,
+            size,
         })
     }
 
@@ -204,6 +207,7 @@ where
         Ok(Item {
             raw: img,
             block,
+            size: reqs.size,
         })
     }
 
