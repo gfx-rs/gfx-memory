@@ -1,6 +1,6 @@
 [package]
 name = "gfx_mem"
-version = "0.0.0"
+version = "0.1.0"
 authors = ["omni-viral <scareaangel@gmail.com>"]
 description = "memory manager for gfx_hal"
 repository = "https://github.com/omni-viral/gfx_mem.git"
