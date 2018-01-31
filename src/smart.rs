@@ -1,32 +1,14 @@
 use gfx_hal::{Backend, MemoryProperties, MemoryType, MemoryTypeId};
 use gfx_hal::memory::{Properties, Requirements};
 
+use {MemoryAllocator, MemoryError};
 use block::{Block, TaggedBlock};
 use combined::{CombinedAllocator, Type};
-use {MemoryAllocator, MemoryError};
 
-#[derive(Debug)]
-struct Heap {
-    size: u64,
-    used: u64,
-}
-
-impl Heap {
-    fn available(&self) -> u64 {
-        self.size - self.used
-    }
-
-    fn alloc(&mut self, size: u64) {
-        self.used += size;
-    }
-
-    fn free(&mut self, size: u64) {
-        self.used -= size;
-    }
-}
-
-/// Allocator that may choose memory type based on requirements.
-/// It allocates from least used memory type from those which satisfy requirements.
+/// Allocator that can choose memory type based on requirements, and keeps track of allocators
+/// for all given memory types.
+///
+/// Allocates memory blocks from the least used memory type from those which satisfy requirements.
 #[derive(Debug)]
 pub struct SmartAllocator<B: Backend> {
     allocators: Vec<(MemoryType, CombinedAllocator<B>)>,
@@ -37,8 +19,15 @@ impl<B> SmartAllocator<B>
 where
     B: Backend,
 {
-    /// Create new smart allocator from `MemoryProperties` given by adapter
-    /// and paramters for sub-allocators.
+    /// Create a new smart allocator from `MemoryProperties` given by a device.
+    ///
+    /// ### Parameters:
+    ///
+    /// - `memory_properties`: memory properties describing the memory available on a device
+    /// - `arena_size`: see `ArenaAllocator`
+    /// - `chunks_per_block`: see `ChunkedAllocator`
+    /// - `min_chunk_size`: see `ChunkedAllocator`
+    /// - `max_chunk_size`: see `ChunkedAllocator`
     pub fn new(
         memory_properties: MemoryProperties,
         arena_size: u64,
@@ -136,7 +125,29 @@ where
     }
 }
 
-/// Opaque type for `TaggedBlock` tag.
-/// `ChunkedAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
+#[derive(Debug)]
+struct Heap {
+    size: u64,
+    used: u64,
+}
+
+impl Heap {
+    fn available(&self) -> u64 {
+        self.size - self.used
+    }
+
+    fn alloc(&mut self, size: u64) {
+        self.used += size;
+    }
+
+    fn free(&mut self, size: u64) {
+        self.used -= size;
+    }
+}
+
+/// Opaque type for `Block` tag used by the `SmartAllocator`.
+///
+/// `SmartAllocator` places this tag on the memory blocks, and then use it in
+/// `free` to find the memory node the block was allocated from.
 #[derive(Debug, Clone, Copy)]
 pub struct Tag(usize, ::combined::Tag);

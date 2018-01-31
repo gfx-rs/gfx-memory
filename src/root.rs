@@ -3,11 +3,15 @@ use std::marker::PhantomData;
 use gfx_hal::{Backend, Device, MemoryTypeId};
 use gfx_hal::memory::Requirements;
 
+use {MemoryAllocator, MemoryError};
 use block::{Block, TaggedBlock};
 use relevant::Relevant;
-use {MemoryAllocator, MemoryError};
 
 /// Allocator that allocates memory directly from device.
+///
+/// ### Type parameters:
+///
+/// - `B`: hal `Backend`
 #[derive(Debug)]
 pub struct RootAllocator<B> {
     relevant: Relevant,
@@ -18,6 +22,10 @@ pub struct RootAllocator<B> {
 
 impl<B> RootAllocator<B> {
     /// Create new allocator that will allocate memory of specified type.
+    ///
+    /// ### Parameters:
+    ///
+    /// - `id`: hal memory type
     pub fn new(id: MemoryTypeId) -> Self {
         RootAllocator {
             relevant: Relevant,

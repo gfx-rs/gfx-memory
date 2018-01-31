@@ -4,62 +4,15 @@ use std::mem::replace;
 use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
 
-use block::{Block, TaggedBlock};
 use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
+use block::{Block, TaggedBlock};
 
-#[derive(Debug)]
-struct ArenaNode<B: Backend, A: MemoryAllocator<B>> {
-    used: u64,
-    freed: u64,
-    block: A::Block,
-}
-
-impl<B, A> ArenaNode<B, A>
-where
-    B: Backend,
-    A: MemoryAllocator<B>,
-{
-    fn new(block: A::Block) -> Self {
-        ArenaNode {
-            used: 0,
-            freed: 0,
-            block,
-        }
-    }
-
-    fn alloc(&mut self, reqs: Requirements) -> Option<TaggedBlock<B, ()>> {
-        let offset = self.block.range().start + self.used;
-        let total_size = reqs.size + alignment_shift(reqs.alignment, offset);
-
-        if self.block.size() - self.used < total_size {
-            None
-        } else {
-            self.used += total_size;
-            Some(TaggedBlock::new(self.block.memory(), offset..total_size + offset))
-        }
-    }
-
-    fn free(&mut self, block: TaggedBlock<B, ()>) {
-        assert!(self.block.contains(&block));
-        self.freed += block.size();
-        unsafe { block.dispose() }
-    }
-
-    fn is_used(&self) -> bool {
-        self.freed != self.used
-    }
-
-    fn dispose(self, owner: &mut A, device: &B::Device) -> Result<(), Self> {
-        if self.is_used() {
-            Err(self)
-        } else {
-            owner.free(device, self.block);
-            Ok(())
-        }
-    }
-}
-
-/// Linear allocator for short-lived objects
+/// Linear allocator that can be used for short-lived objects.
+///
+/// ### Type parameters:
+///
+/// - `B`: hal `Backend`
+/// - `A`: allocator used to allocate bigger blocks of memory
 #[derive(Debug)]
 pub struct ArenaAllocator<B: Backend, A: MemoryAllocator<B>> {
     id: MemoryTypeId,
@@ -74,7 +27,12 @@ where
     B: Backend,
     A: MemoryAllocator<B>,
 {
-    /// Construct allocator.
+    /// Create a new arena allocator
+    ///
+    /// ### Parameters:
+    ///
+    /// - `arena_size`: size in bytes of the arena
+    /// - `id`: hal memory type
     pub fn new(arena_size: u64, id: MemoryTypeId) -> Self {
         ArenaAllocator {
             id,
@@ -208,7 +166,64 @@ where
     }
 }
 
-/// Opaque type for `TaggedBlock` tag.
-/// `ArenaAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
+#[derive(Debug)]
+struct ArenaNode<B: Backend, A: MemoryAllocator<B>> {
+    used: u64,
+    freed: u64,
+    block: A::Block,
+}
+
+impl<B, A> ArenaNode<B, A>
+where
+    B: Backend,
+    A: MemoryAllocator<B>,
+{
+    fn new(block: A::Block) -> Self {
+        ArenaNode {
+            used: 0,
+            freed: 0,
+            block,
+        }
+    }
+
+    fn alloc(&mut self, reqs: Requirements) -> Option<TaggedBlock<B, ()>> {
+        let offset = self.block.range().start + self.used;
+        let total_size = reqs.size + alignment_shift(reqs.alignment, offset);
+
+        if self.block.size() - self.used < total_size {
+            None
+        } else {
+            self.used += total_size;
+            Some(TaggedBlock::new(
+                self.block.memory(),
+                offset..total_size + offset,
+            ))
+        }
+    }
+
+    fn free(&mut self, block: TaggedBlock<B, ()>) {
+        assert!(self.block.contains(&block));
+        self.freed += block.size();
+        unsafe { block.dispose() }
+    }
+
+    fn is_used(&self) -> bool {
+        self.freed != self.used
+    }
+
+    fn dispose(self, owner: &mut A, device: &B::Device) -> Result<(), Self> {
+        if self.is_used() {
+            Err(self)
+        } else {
+            owner.free(device, self.block);
+            Ok(())
+        }
+    }
+}
+
+/// Opaque type for `Block` tag used by the `ArenaAllocator`.
+///
+/// `ArenaAllocator` places this tag on the memory blocks, and then use it in
+/// `free` to find the memory node the block was allocated from.
 #[derive(Debug, Clone, Copy)]
 pub struct Tag(u64);

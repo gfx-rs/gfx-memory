@@ -4,34 +4,46 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::ops::Range;
 
 use gfx_hal::{Backend, Device};
-use gfx_hal::buffer::{Usage as BufferUsage, CreationError as BufferCreationError};
+use gfx_hal::buffer::{CreationError as BufferCreationError, Usage as BufferUsage};
 use gfx_hal::format::Format;
-use gfx_hal::image::{Kind, Level, Usage as ImageUsage, CreationError as ImageCreationError};
+use gfx_hal::image::{CreationError as ImageCreationError, Kind, Level, Usage as ImageUsage};
 
 use block::Block;
 
 use {MemoryAllocator, MemoryError};
 
-/// Trait that allows to create buffers and images and manages memory for them.
+/// Factory trait used to create buffers and images and manage the memory for them.
+///
+/// ### Type parameters:
+///
+/// - `B`: hal `Backend`
 pub trait Factory<B: Backend> {
-    /// Type of buffers this factory produces.
-    /// User may borrow raw buffer from it.
+    /// Type of buffers this factory produce.
+    /// The user can borrow the raw buffer.
     type Buffer: BorrowMut<B::Buffer> + Block<B>;
 
-    /// Type of images this factory produces.
-    /// User may borrow raw image from it.
+    /// Type of images this factory produce.
+    /// The user can borrow the raw image.
     type Image: BorrowMut<B::Image> + Block<B>;
 
-    /// Information required to produce buffer.
+    /// Information required to produce a buffer.
     type BufferRequest;
 
-    /// Information required to produce image.
+    /// Information required to produce an image.
     type ImageRequest;
 
     /// Error type this factory can yield.
     type Error;
 
-    /// Create buffer with specified size and usage.
+    /// Create a buffer with the specified size and usage.
+    ///
+    /// ### Parameters
+    ///
+    /// - `device`: device to create the buffer on
+    /// - `request`: information needed by the `MemoryAllocator` to allocate a block of memory for
+    ///              the buffer
+    /// - `size`: size in bytes of the buffer
+    /// - `usage`: hal buffer `Usage`
     fn create_buffer(
         &mut self,
         device: &B::Device,
@@ -40,7 +52,17 @@ pub trait Factory<B: Backend> {
         usage: BufferUsage,
     ) -> Result<Self::Buffer, Self::Error>;
 
-    /// Create image with specified kind, level, format and usage.
+    /// Create an image with the specified kind, level, format and usage.
+    ///
+    /// ### Parameters:
+    ///
+    /// - `device`: device to create the image on
+    /// - `request`: information needed by the `MemoryAllocator` to allocate a block of memory for
+    ///              the image
+    /// - `kind`: `Kind` of texture storage to allocate
+    /// - `level`: mipmap level
+    /// - `format`: texture format
+    /// - `usage`: hal image usage
     fn create_image(
         &mut self,
         device: &B::Device,
@@ -51,22 +73,29 @@ pub trait Factory<B: Backend> {
         usage: ImageUsage,
     ) -> Result<Self::Image, Self::Error>;
 
-    /// Destroy buffer created by this factory.
-    fn destroy_buffer(
-        &mut self,
-        device: &B::Device,
-        buffer: Self::Buffer,
-    );
+    /// Destroy a buffer created by this factory.
+    ///
+    /// ### Parameters:
+    ///
+    /// - `device`: device the buffer was created on
+    /// - `buffer`: the buffer to destroy
+    fn destroy_buffer(&mut self, device: &B::Device, buffer: Self::Buffer);
 
     /// Destroy image created by this factory.
-    fn destroy_image(
-        &mut self,
-        device: &B::Device,
-        image: Self::Image,
-    );
+    ///
+    /// ### Parameters:
+    ///
+    /// - `device`: device the image was created on
+    /// - `image`: the image to destroy
+    fn destroy_image(&mut self, device: &B::Device, image: Self::Image);
 }
 
-/// Item produced by allocator-as-factory.
+/// Memory resource produced by the blanket `MemoryAllocator` as `Factory` implementation.
+///
+/// ### Type parameters:
+///
+/// - `I`: Item type produced by the `Factory` (hal `Buffer` or `Image`)
+/// - `B`: Memory block type (see `Block`)
 #[derive(Debug)]
 pub struct Item<I, B> {
     raw: I,
@@ -97,20 +126,20 @@ where
 
     fn range(&self) -> Range<u64> {
         let offset = self.block.range().start;
-        offset .. offset + self.size
+        offset..offset + self.size
     }
 }
 
-
-/// Possible errors that may be returned from allocator-as-factory
+/// Possible errors that may be returned from the blanket `MemoryAllocator` as `Factory`
+/// implementation.
 #[derive(Debug)]
 pub enum FactoryError {
     /// Memory error.
     MemoryError(MemoryError),
 
-    /// Buffer creations error.
+    /// Buffer creation error.
     BufferCreationError(BufferCreationError),
-    
+
     /// Image creation error.
     ImageCreationError(ImageCreationError),
 }
@@ -178,12 +207,13 @@ where
         request: A::Request,
         size: u64,
         usage: BufferUsage,
-    ) -> Result<Item<B::Buffer, A::Block>, FactoryError>
-    {
+    ) -> Result<Item<B::Buffer, A::Block>, FactoryError> {
         let ubuf = device.create_buffer(size, usage)?;
         let reqs = device.get_buffer_requirements(&ubuf);
         let block = self.alloc(device, request, reqs)?;
-        let buf = device.bind_buffer_memory(block.memory(), block.range().start, ubuf).unwrap();
+        let buf = device
+            .bind_buffer_memory(block.memory(), block.range().start, ubuf)
+            .unwrap();
         Ok(Item {
             raw: buf,
             block,
@@ -203,7 +233,9 @@ where
         let uimg = device.create_image(kind, level, format, usage)?;
         let reqs = device.get_image_requirements(&uimg);
         let block = self.alloc(device, request, reqs)?;
-        let img = device.bind_image_memory(block.memory(), block.range().start, uimg).unwrap();
+        let img = device
+            .bind_image_memory(block.memory(), block.range().start, uimg)
+            .unwrap();
         Ok(Item {
             raw: img,
             block,
@@ -211,22 +243,12 @@ where
         })
     }
 
-    fn destroy_buffer(
-        &mut self,
-        device: &B::Device,
-        buffer: Self::Buffer,
-    )
-    {
+    fn destroy_buffer(&mut self, device: &B::Device, buffer: Self::Buffer) {
         device.destroy_buffer(buffer.raw);
         self.free(device, buffer.block);
     }
 
-    fn destroy_image(
-        &mut self,
-        device: &B::Device,
-        image: Self::Image,
-    )
-    {
+    fn destroy_image(&mut self, device: &B::Device, image: Self::Image) {
         device.destroy_image(image.raw);
         self.free(device, image.block);
     }
