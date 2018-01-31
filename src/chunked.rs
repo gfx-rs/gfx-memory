@@ -131,8 +131,13 @@ where
     }
 }
 
-/// Allocator that rounds up requested size to the closes power of 2
-/// and returns a block from the list of equal sized chunks.
+/// Allocator that rounds up the requested size to the closest power of two and returns a block
+/// from a list of equal sized chunks.
+///
+/// ### Type parameters:
+///
+/// - `B`: hal `Backend`
+/// - `A`: allocator used to allocate bigger blocks of memory
 #[derive(Debug)]
 pub struct ChunkedAllocator<B: Backend, A: MemoryAllocator<B>> {
     id: MemoryTypeId,
@@ -147,12 +152,19 @@ where
     B: Backend,
     A: MemoryAllocator<B>,
 {
-    /// Create new chunk-list allocator.
+    /// Create a new chunked allocator.
     ///
-    /// # Panics
+    /// ### Parameters:
     ///
-    /// Panics if `chunk_size` or `min_chunk_size` are not power of 2.
+    /// - `chunks_per_block`: used for calculating size of memory blocks to request from the
+    ///                       underlying allocator
+    /// - `min_chunk_size`: ?
+    /// - `max_chunk_size`: ?
+    /// - `id`: hal memory type
     ///
+    /// ### Panics
+    ///
+    /// Panics if `chunk_size` or `min_chunk_size` are not a power of two.
     pub fn new(
         chunks_per_block: usize,
         min_chunk_size: u64,
@@ -258,7 +270,9 @@ where
     }
 }
 
-/// Opaque type for `TaggedBlock` tag.
-/// `ChunkedAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
+/// Opaque type for `Block` tag used by the `ChunkedAllocator`.
+///
+/// `ChunkedAllocator` places this tag on the memory blocks, and then use it in
+/// `free` to find the memory node the block was allocated from.
 #[derive(Debug, Clone, Copy)]
 pub struct Tag(usize);

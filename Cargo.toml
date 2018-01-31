@@ -2,7 +2,7 @@
 name = "gfx_mem"
 version = "0.1.0"
 authors = ["omni-viral <scareaangel@gmail.com>"]
-description = "memory manager for gfx_hal"
+description = "Memory management for gfx_hal"
 repository = "https://github.com/omni-viral/gfx_mem.git"
 license = "MIT/Apache-2.0"
 

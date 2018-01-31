@@ -1,26 +1,31 @@
 use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
 
+use {MemoryAllocator, MemoryError, MemorySubAllocator};
 use arena::ArenaAllocator;
-use block::{TaggedBlock};
+use block::TaggedBlock;
 use chunked::ChunkedAllocator;
 use root::RootAllocator;
-use {MemoryAllocator, MemoryError, MemorySubAllocator};
 
-/// Type of sub-allocator used.
+/// Controls what sub allocator is used for an allocation by `CombinedAllocator`
 #[derive(Clone, Copy, Debug)]
 pub enum Type {
-    /// For short-lived objects.
-    /// Such as staging buffers.
+    /// For short-lived objects, such as staging buffers.
     ShortLived,
 
     /// General purpose.
     General,
 }
 
-/// Combines arena and chunked sub-allocators.
-/// Uses root memory allocator as their super-allocator.
-/// Allows to choose which allocator to use.
+/// Combines `ArenaAllocator` and `ChunkedAllocator`, and allows the user to control which type of
+/// allocation to use.
+///
+/// Use `RootAllocator` as the super allocator, which will handle the actual memory allocations
+/// from `Device`.
+///
+/// ### Type parameters:
+///
+/// - `B`: hal `Backend`
 #[derive(Debug)]
 pub struct CombinedAllocator<B>
 where
@@ -35,7 +40,15 @@ impl<B> CombinedAllocator<B>
 where
     B: Backend,
 {
-    /// Create combined allocator with paramaters for sub-allocators.
+    /// Create a combined allocator.
+    ///
+    /// ### Parameters:
+    ///
+    /// - `memory_type_id`: hal memory type
+    /// - `arena_size`: see `ArenaAllocator`
+    /// - `chunks_per_block`: see `ChunkedAllocator`
+    /// - `min_chunk_size`: see `ChunkedAllocator`
+    /// - `max_chunk_size`: see `ChunkedAllocator`
     pub fn new(
         memory_type_id: MemoryTypeId,
         arena_size: u64,
@@ -142,8 +155,10 @@ where
     }
 }
 
-/// Opaque type for `TaggedBlock` tag.
-/// `ChunkedAllocator` places this tag and than uses it in `MemorySubAllocator::free` method.
+/// Opaque type for `Block` tag used by the `CombinedAllocator`.
+///
+/// `CombinedAllocator` places this tag on the memory blocks, and then use it in
+/// `free` to find the memory node the block was allocated from.
 #[derive(Debug, Clone, Copy)]
 pub enum Tag {
     Arena(::arena::Tag),

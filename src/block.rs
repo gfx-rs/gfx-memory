@@ -6,7 +6,7 @@ use gfx_hal::Backend;
 use MemoryAllocator;
 use relevant::Relevant;
 
-/// Trait for types that represents or bound to range of `Memory`.
+/// Trait for types that represent a block (`Range`) of `Memory`.
 pub trait Block<B: Backend> {
     /// `Memory` instance of the block.
     fn memory(&self) -> &B::Memory;
@@ -20,7 +20,15 @@ pub trait Block<B: Backend> {
         self.range().end - self.range().start
     }
 
-    /// Helper method to check if `other` block is sub-block of `self`
+    /// Check if a block is a child of this block.
+    ///
+    /// ### Parameters:
+    ///
+    /// - `other`: potential child block
+    ///
+    /// ### Type parameters:
+    ///
+    /// - `T`: tag of potential child block
     fn contains<T>(&self, other: &T) -> bool
     where
         T: Block<B>,
@@ -32,8 +40,14 @@ pub trait Block<B: Backend> {
 }
 
 /// Tagged block of memory.
-/// It is relevant type and can't be silently dropped.
-/// User must return this block to the same allocator it came from.
+///
+/// A `TaggedBlock` must never be silently dropped, that will result in a panic.
+/// The block must be freed by returning it to the same allocator it came from.
+///
+/// ### Type parameters:
+///
+/// - `B`: hal `Backend`
+/// - `T`: tag type, used by allocators to track allocations
 #[derive(Debug)]
 pub struct TaggedBlock<B: Backend, T> {
     relevant: Relevant,
@@ -60,10 +74,15 @@ impl<B> TaggedBlock<B, ()>
 where
     B: Backend,
 {
-    /// Construct untagged block from `Memory` and `Range`.
-    /// Pointed `Memory` shouldn't be freed until at least one `TaggedBlock`s of it
-    /// still exists.
-    pub fn new(memory: *const B::Memory, range: Range<u64>) -> Self {
+    /// Construct a tagged block from `Memory` and `Range`.
+    /// The given `Memory` must not be freed if there are `Block`s allocated from it that are still
+    /// in use.
+    ///
+    /// ### Parameters:
+    ///
+    /// - `memory`: pointer to the actual memory for the block
+    /// - `range`: range of the `memory` used by the block
+    pub(crate) fn new(memory: *const B::Memory, range: Range<u64>) -> Self {
         assert!(range.start <= range.end);
         TaggedBlock {
             relevant: Relevant,
@@ -96,8 +115,16 @@ impl<B, T> TaggedBlock<B, T>
 where
     B: Backend,
 {
-    /// Free this block returning it to the origin.
-    /// It must be the allocator this block was allocated from.
+    /// Free this block by returning it to the origin.
+    ///
+    /// ### Parameters:
+    ///
+    /// - `origin`: allocator the block was allocated from
+    /// - `device`: device the memory was allocated from
+    ///
+    /// ### Type parameters:
+    ///
+    /// - `A`: allocator type
     pub fn free<A>(self, origin: &mut A, device: &B::Device)
     where
         A: MemoryAllocator<B, Block = Self>,
@@ -106,8 +133,17 @@ where
         origin.free(device, self);
     }
 
-    /// Push additional tag value to this block.
-    /// Tags form a stack - e.g. LIFO
+    /// Push an additional tag value to this block.
+    ///
+    /// Tags form a stack.
+    ///
+    /// ### Parameters:
+    ///
+    /// - `value`: new tag to push onto the tag stack
+    ///
+    /// ### Type parameters:
+    ///
+    /// - `Y`: type of the new tag
     pub fn push_tag<Y>(self, value: Y) -> TaggedBlock<B, (Y, T)> {
         TaggedBlock {
             relevant: self.relevant,
@@ -117,8 +153,17 @@ where
         }
     }
 
-    /// Convert tag value using specified function.
-    /// Tags form a stack - e.g. LIFO
+    /// Replace tag value using the given function.
+    ///
+    /// Tags form a stack.
+    ///
+    /// ### Parameters:
+    ///
+    /// - `f`: function that will take the current tag and output a new tag for the block
+    ///
+    /// ### Type parameters:
+    ///
+    /// - `Y`: type of the new tag
     pub fn convert_tag<F, Y>(self, f: F) -> TaggedBlock<B, Y>
     where
         F: FnOnce(T) -> Y,
@@ -131,7 +176,19 @@ where
         }
     }
 
-    /// Replace tag attached to this block
+    /// Replace the tag value of this block
+    ///
+    /// ### Parameters:
+    ///
+    /// - `value`: new tag for the block
+    ///
+    /// ### Type parameters:
+    ///
+    /// - `Y`: type of the new tag
+    ///
+    /// ### Returns
+    ///
+    /// The block and the old tag value
     pub fn replace_tag<Y>(self, value: Y) -> (TaggedBlock<B, Y>, T) {
         (
             TaggedBlock {
@@ -144,13 +201,26 @@ where
         )
     }
 
-    /// Take tag attached to this block leaving `()` in its place.
+    /// Take the tag value of this block, leaving `()` in its place.
+    ///
+    /// ### Returns
+    ///
+    /// The block and the old tag value
     pub fn take_tag(self) -> (TaggedBlock<B, ()>, T) {
         self.replace_tag(())
     }
 
-    /// Set tag to this block.
-    /// Drops old tag.
+    /// Set the tag value of this block.
+    ///
+    /// The old tag will be dropped.
+    ///
+    /// ### Parameters:
+    ///
+    /// - `value`: new tag for the block
+    ///
+    /// ### Type parameters:
+    ///
+    /// - `Y`: type of the new tag
     pub fn set_tag<Y>(self, value: Y) -> TaggedBlock<B, Y> {
         TaggedBlock {
             relevant: self.relevant,
@@ -161,10 +231,14 @@ where
     }
 
     /// Dispose of this block.
-    /// Returns tag value.
-    /// This is unsafe as the caller must ensure that
-    /// the memory of the block won't be used.
-    /// Typically by dropping resource (`Buffer` or `Image`) that occupy this memory.
+    ///
+    /// This is unsafe because the caller must ensure that the memory of the block is not used
+    /// again. This will typically entail dropping some kind of resource (`Buffer` or `Image` to
+    /// give some examples) that occupy this memory.
+    ///
+    /// ### Returns
+    ///
+    /// Tag value of the block
     pub unsafe fn dispose(self) -> T {
         self.relevant.dispose();
         self.tag
@@ -176,7 +250,12 @@ where
     B: Backend,
 {
     /// Pop top tag value from this block
-    /// Tags form a stack - e.g. LIFO
+    ///
+    /// Tags form a stack.
+    ///
+    /// ### Returns
+    ///
+    /// The block and the old top tag value
     pub fn pop_tag(self) -> (TaggedBlock<B, T>, Y) {
         (
             TaggedBlock {
