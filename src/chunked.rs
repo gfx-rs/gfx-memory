@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::VecDeque;
 
 use gfx_hal::{Backend, MemoryTypeId};
@@ -89,9 +90,9 @@ where
         if (1 << self.id.0) & reqs.type_mask == 0 {
             return Err(MemoryError::NoCompatibleMemoryType);
         }
-        assert!(self.chunk_size >= reqs.size);
-        assert!(self.chunk_size >= reqs.alignment);
         if let Some(block) = self.alloc_no_grow() {
+            assert!(block.size() >= reqs.size);
+            assert_eq!(block.range().start & (reqs.alignment - 1), 0);
             Ok(block)
         } else {
             self.grow(owner, device, request)?;
@@ -231,7 +232,7 @@ where
         if reqs.size > self.max_chunk_size {
             return Err(MemoryError::OutOfMemory);
         }
-        let index = self.pick_node(reqs.size);
+        let index = self.pick_node(max(reqs.size, reqs.alignment));
         self.grow(index + 1);
         self.nodes[index as usize].alloc(owner, device, request, reqs)
     }
