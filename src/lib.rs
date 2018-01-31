@@ -9,10 +9,10 @@
 extern crate gfx_hal;
 extern crate relevant;
 
-use std::cmp::Eq;
+use std::cmp::PartialOrd;
 use std::error::Error;
 use std::fmt::{self, Debug};
-use std::ops::{Add, Rem, Sub};
+use std::ops::{Add, BitOr, Sub};
 
 use gfx_hal::Backend;
 use gfx_hal::device::OutOfMemory;
@@ -143,19 +143,18 @@ pub trait MemorySubAllocator<B: Backend> {
 /// Calculate shift from specified offset required to satisfy alignment.
 pub fn alignment_shift<T>(alignment: T, offset: T) -> T
 where
-    T: From<u8> + Add<Output = T> + Sub<Output = T> + Rem<Output = T> + Eq + Copy,
+    T: From<u8> + Add<Output=T> + Sub<Output=T> + BitOr<Output=T> + PartialOrd + Copy,
 {
-    if offset == 0.into() {
-        0.into()
-    } else {
-        alignment - (offset - 1.into()) % alignment - 1.into()
-    }
+    shift_for_alignment(alignment, offset) - offset
 }
 
-/// Shift from specified offset in order to to satisfy alignment.
-pub fn shift_for_alignment<T>(alignment: T, offset: T) -> T
+fn shift_for_alignment<T>(offset: T, alignment: T) -> T
 where
-    T: From<u8> + Add<Output = T> + Sub<Output = T> + Rem<Output = T> + Eq + Copy,
+    T: From<u8> + Add<Output=T> + Sub<Output=T> + BitOr<Output=T> + PartialOrd,
 {
-    offset + alignment_shift(alignment, offset)
+    if offset > 0.into() && alignment > 0.into() {
+        ((offset - 1.into()) | (alignment - 1.into())) + 1.into()
+    } else {
+        offset
+    }
 }
