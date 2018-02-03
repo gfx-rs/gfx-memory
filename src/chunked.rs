@@ -5,7 +5,7 @@ use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
 
 use block::{Block, TaggedBlock};
-use {shift_for_alignment, MemoryAllocator, MemoryError, MemorySubAllocator};
+use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
 
 #[derive(Debug)]
 struct ChunkedNode<B: Backend, A: MemoryAllocator<B>> {
@@ -13,7 +13,7 @@ struct ChunkedNode<B: Backend, A: MemoryAllocator<B>> {
     chunks_per_block: usize,
     chunk_size: u64,
     free: VecDeque<(usize, u64)>,
-    blocks: Vec<(A::Block, u64)>,
+    blocks: Vec<A::Block>,
 }
 
 impl<B, A> ChunkedNode<B, A>
@@ -47,23 +47,22 @@ where
             alignment: self.chunk_size,
         };
         let block = owner.alloc(device, request, reqs)?;
-        let offset = shift_for_alignment(reqs.alignment, block.range().start);
-
-        assert!(self.chunks_per_block as u64 <= (block.size() - offset) / self.chunk_size);
+        assert_eq!(0, alignment_shift(reqs.alignment, block.range().start));
+        assert!(self.chunks_per_block as u64 <= block.size() / self.chunk_size);
 
         for i in 0..self.chunks_per_block as u64 {
             self.free.push_back((self.blocks.len(), i));
         }
-        self.blocks.push((block, offset));
+        self.blocks.push(block);
 
         Ok(())
     }
 
     fn alloc_no_grow(&mut self) -> Option<TaggedBlock<B, Tag>> {
         self.free.pop_front().map(|(block_index, chunk_index)| {
-            let offset = self.blocks[block_index].1 + chunk_index * self.chunk_size;
+            let offset = chunk_index * self.chunk_size;
             let block = TaggedBlock::new(
-                self.blocks[block_index].0.memory(),
+                self.blocks[block_index].memory(),
                 offset..self.chunk_size + offset,
             );
             block.set_tag(Tag(block_index))
@@ -106,9 +105,8 @@ where
         let offset = block.range().start;
         let block_memory: *const B::Memory = block.memory();
         let Tag(block_index) = unsafe { block.dispose() };
-        let offset = offset - self.blocks[block_index].1;
         assert!(::std::ptr::eq(
-            self.blocks[block_index].0.memory(),
+            self.blocks[block_index].memory(),
             block_memory
         ));
         let chunk_index = offset / self.chunk_size;
@@ -123,7 +121,7 @@ where
         if self.is_used() {
             Err(self)
         } else {
-            for (block, _) in self.blocks.drain(..) {
+            for block in self.blocks.drain(..) {
                 owner.free(device, block);
             }
             Ok(())
