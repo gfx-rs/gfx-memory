@@ -235,14 +235,14 @@ pub trait MemorySubAllocator<B: Backend> {
 /// Calculate shift from specified offset required to satisfy alignment.
 pub fn alignment_shift<T>(alignment: T, offset: T) -> T
 where
-    T: From<u8> + Add<Output=T> + Sub<Output=T> + BitOr<Output=T> + PartialOrd + Copy,
+    T: From<u8> + Add<Output = T> + Sub<Output = T> + BitOr<Output = T> + PartialOrd + Copy,
 {
     shift_for_alignment(alignment, offset) - offset
 }
 
 fn shift_for_alignment<T>(alignment: T, offset: T) -> T
 where
-    T: From<u8> + Add<Output=T> + Sub<Output=T> + BitOr<Output=T> + PartialOrd,
+    T: From<u8> + Add<Output = T> + Sub<Output = T> + BitOr<Output = T> + PartialOrd,
 {
     if offset > 0.into() && alignment > 0.into() {
         ((offset - 1.into()) | (alignment - 1.into())) + 1.into()

@@ -4,8 +4,8 @@ use std::collections::VecDeque;
 use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
 
-use block::{Block, TaggedBlock};
 use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
+use block::{Block, TaggedBlock};
 
 #[derive(Debug)]
 struct ChunkedNode<B: Backend, A: MemoryAllocator<B>> {
