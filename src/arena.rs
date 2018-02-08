@@ -44,7 +44,7 @@ impl<T> ArenaAllocator<T> {
     /// If this function returns `false`, the allocator can be `dispose`d.
     pub fn is_used(&self) -> bool {
         !self.nodes.is_empty()
-            && self.hot
+            || self.hot
                 .as_ref()
                 .map(|node| node.is_used())
                 .unwrap_or(false)
@@ -168,7 +168,7 @@ where
             Err(self)
         } else {
             if let Some(hot) = self.hot.take() {
-                hot.dispose(owner, device).unwrap();
+                hot.dispose(owner, device).expect("Already checked");
             }
             Ok(())
         }
