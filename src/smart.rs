@@ -27,14 +27,14 @@ where
     ///
     /// - `memory_properties`: memory properties describing the memory available on a device
     /// - `arena_size`: see `ArenaAllocator`
-    /// - `chunks_per_block`: see `ChunkedAllocator`
-    /// - `min_chunk_size`: see `ChunkedAllocator`
+    /// - `blocks_per_chunk`: see `ChunkedAllocator`
+    /// - `min_block_size`: see `ChunkedAllocator`
     /// - `max_chunk_size`: see `ChunkedAllocator`
     pub fn new(
         memory_properties: MemoryProperties,
         arena_size: u64,
-        chunks_per_block: usize,
-        min_chunk_size: u64,
+        blocks_per_chunk: usize,
+        min_block_size: u64,
         max_chunk_size: u64,
     ) -> Self {
         SmartAllocator {
@@ -48,8 +48,8 @@ where
                         CombinedAllocator::new(
                             MemoryTypeId(index),
                             arena_size,
-                            chunks_per_block,
-                            min_chunk_size,
+                            blocks_per_chunk,
+                            min_block_size,
                             max_chunk_size,
                         ),
                     )
@@ -77,30 +77,46 @@ where
         (ty, prop): (Type, Properties),
         reqs: Requirements,
     ) -> Result<SmartBlock<B>, MemoryError> {
-        let ref mut heaps = self.heaps;
-        let allocators = self.allocators.iter_mut().enumerate();
+        let mut compatible = false;
+        let mut candidate = None;
 
-        let mut compatible_count = 0;
-        let (index, &mut (memory_type, ref mut allocator)) = allocators
-            .filter(|&(index, &mut (ref memory_type, _))| {
-                ((1 << index) & reqs.type_mask) == (1 << index)
-                    && memory_type.properties.contains(prop)
-            })
-            .filter(|&(_, &mut (ref memory_type, _))| {
-                compatible_count += 1;
-                heaps[memory_type.heap_index].available() >= (reqs.size + reqs.alignment)
-            })
-            .next()
-            .ok_or(MemoryError::from(if compatible_count == 0 {
-                MemoryError::NoCompatibleMemoryType
-            } else {
-                MemoryError::OutOfMemory
-            }))?;
+        // Find compatible memory type with least used heap with enough available memory
+        for index in 0 .. self.allocators.len() {
+            let memory_type = self.allocators[index].0;
+            // filter out non-compatible
+            if ((1 << index) & reqs.type_mask) != (1 << index) || !memory_type.properties.contains(prop) {
+                continue;
+            }
+            compatible = true;
+            // filter out if heap has not enough memory available
+            if self.heaps[memory_type.heap_index].available() < (reqs.size + reqs.alignment) {
+                continue;
+            }
+            // Compare with candidate. Replace if this one is less used.
+            let this_usage = self.heaps[memory_type.heap_index].usage();
+            match candidate {
+                Some((ref mut candidate, ref mut usage)) if *usage > this_usage => { *candidate = index; *usage = this_usage; }
+                ref mut candidate @ None => *candidate = Some((index, this_usage)),
+                _ => {}
+            }
+        }
 
-        let block = allocator.alloc(device, ty, reqs)?;
-        heaps[memory_type.heap_index].alloc(block.size());
-
-        Ok(SmartBlock(block, index))
+        match candidate {
+            Some((chosen, _)) => {
+                // Allocate from final candidate
+                let block = self.allocators[chosen].1.alloc(device, ty, reqs)?;
+                self.heaps[self.allocators[chosen].0.heap_index].alloc(block.size());
+                Ok(SmartBlock(block, chosen))
+            }
+            None => {
+                // No candidates
+                Err(if !compatible {
+                    MemoryError::NoCompatibleMemoryType
+                } else {
+                    MemoryError::OutOfMemory
+                })
+            }
+        }
     }
 
     fn free(&mut self, device: &B::Device, block: SmartBlock<B>) {
@@ -144,6 +160,10 @@ impl Heap {
 
     fn free(&mut self, size: u64) {
         self.used -= size;
+    }
+
+    fn usage(&self) -> f32 {
+        self.used as f32 / self.size as f32
     }
 }
 

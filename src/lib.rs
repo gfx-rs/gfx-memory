@@ -2,7 +2,7 @@
 //!
 //! ### Example
 //!
-//! ```
+//! ```rust
 //! extern crate gfx_hal;
 //! extern crate gfx_mem;
 //!

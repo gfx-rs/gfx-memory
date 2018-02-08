@@ -48,22 +48,22 @@ where
     ///
     /// - `memory_type_id`: hal memory type
     /// - `arena_size`: see `ArenaAllocator`
-    /// - `chunks_per_block`: see `ChunkedAllocator`
-    /// - `min_chunk_size`: see `ChunkedAllocator`
+    /// - `blocks_per_chunk`: see `ChunkedAllocator`
+    /// - `min_block_size`: see `ChunkedAllocator`
     /// - `max_chunk_size`: see `ChunkedAllocator`
     pub fn new(
         memory_type_id: MemoryTypeId,
         arena_size: u64,
-        chunks_per_block: usize,
-        min_chunk_size: u64,
+        blocks_per_chunk: usize,
+        min_block_size: u64,
         max_chunk_size: u64,
     ) -> Self {
         CombinedAllocator {
             root: RootAllocator::new(memory_type_id),
             arenas: ArenaAllocator::new(arena_size, memory_type_id),
             chunks: ChunkedAllocator::new(
-                chunks_per_block,
-                min_chunk_size,
+                blocks_per_chunk,
+                min_block_size,
                 max_chunk_size,
                 memory_type_id,
             ),
@@ -126,8 +126,8 @@ where
     fn dispose(mut self, device: &B::Device) -> Result<(), Self> {
         let memory_type_id = self.root.memory_type();
         let arena_size = self.arenas.arena_size();
-        let chunks_per_block = self.chunks.chunks_per_block();
-        let min_chunk_size = self.chunks.min_chunk_size();
+        let blocks_per_chunk = self.chunks.blocks_per_chunk();
+        let min_block_size = self.chunks.min_block_size();
         let max_chunk_size = self.chunks.max_chunk_size();
 
         let arenas = self.arenas.dispose(&mut self.root, device);
@@ -139,8 +139,8 @@ where
                 .unwrap_or_else(|| ArenaAllocator::new(arena_size, memory_type_id));
             let chunks = chunks.err().unwrap_or_else(|| {
                 ChunkedAllocator::new(
-                    chunks_per_block,
-                    min_chunk_size,
+                    blocks_per_chunk,
+                    min_block_size,
                     max_chunk_size,
                     memory_type_id,
                 )
