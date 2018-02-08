@@ -81,10 +81,12 @@ where
         let mut candidate = None;
 
         // Find compatible memory type with least used heap with enough available memory
-        for index in 0 .. self.allocators.len() {
+        for index in 0..self.allocators.len() {
             let memory_type = self.allocators[index].0;
             // filter out non-compatible
-            if ((1 << index) & reqs.type_mask) != (1 << index) || !memory_type.properties.contains(prop) {
+            if ((1 << index) & reqs.type_mask) != (1 << index)
+                || !memory_type.properties.contains(prop)
+            {
                 continue;
             }
             compatible = true;
@@ -95,7 +97,10 @@ where
             // Compare with candidate. Replace if this one is less used.
             let this_usage = self.heaps[memory_type.heap_index].usage();
             match candidate {
-                Some((ref mut candidate, ref mut usage)) if *usage > this_usage => { *candidate = index; *usage = this_usage; }
+                Some((ref mut candidate, ref mut usage)) if *usage > this_usage => {
+                    *candidate = index;
+                    *usage = this_usage;
+                }
                 ref mut candidate @ None => *candidate = Some((index, this_usage)),
                 _ => {}
             }

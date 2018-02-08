@@ -90,20 +90,18 @@ where
         reqs: Requirements,
     ) -> Result<CombinedBlock<B>, MemoryError> {
         match request {
-            Type::ShortLived => {
-                self.arenas
-                    .alloc(&mut self.root, device, (), reqs)
-                    .map(|ArenaBlock(block, tag)| CombinedBlock(block, CombinedTag::Arena(tag)))
-            }
+            Type::ShortLived => self.arenas
+                .alloc(&mut self.root, device, (), reqs)
+                .map(|ArenaBlock(block, tag)| CombinedBlock(block, CombinedTag::Arena(tag))),
             Type::General => {
                 if reqs.size > self.chunks.max_chunk_size() {
                     self.root
                         .alloc(device, (), reqs)
                         .map(|block| CombinedBlock(block, CombinedTag::Root))
                 } else {
-                    self.chunks
-                        .alloc(&mut self.root, device, (), reqs)
-                        .map(|ChunkedBlock(block, tag)| CombinedBlock(block, CombinedTag::Chunked(tag)))
+                    self.chunks.alloc(&mut self.root, device, (), reqs).map(
+                        |ChunkedBlock(block, tag)| CombinedBlock(block, CombinedTag::Chunked(tag)),
+                    )
                 }
             }
         }
@@ -111,8 +109,14 @@ where
 
     fn free(&mut self, device: &B::Device, block: CombinedBlock<B>) {
         match block.1 {
-            CombinedTag::Arena(tag) => self.arenas.free(&mut self.root, device, ArenaBlock(block.0, tag)),
-            CombinedTag::Chunked(tag) => self.chunks.free(&mut self.root, device, ChunkedBlock(block.0, tag)),
+            CombinedTag::Arena(tag) => {
+                self.arenas
+                    .free(&mut self.root, device, ArenaBlock(block.0, tag))
+            }
+            CombinedTag::Chunked(tag) => {
+                self.chunks
+                    .free(&mut self.root, device, ChunkedBlock(block.0, tag))
+            }
             CombinedTag::Root => self.root.free(device, block.0),
         }
     }

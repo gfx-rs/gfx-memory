@@ -226,7 +226,7 @@ impl<T> ArenaNode<T> {
     where
         B: Backend,
         T: Block<B>,
-        A: MemoryAllocator<B, Block=T>,
+        A: MemoryAllocator<B, Block = T>,
     {
         if self.is_used() {
             Err(self)

@@ -68,7 +68,10 @@ impl<T> ChunkedNode<T> {
 
         let blocks_per_chunk = self.blocks_per_chunk();
         let block_index = self.blocks.len();
-        self.free.extend((0..blocks_per_chunk).map(|i| FreeBlock { block_index,  chunk_index: i as u64 }));
+        self.free.extend((0..blocks_per_chunk).map(|i| FreeBlock {
+            block_index,
+            chunk_index: i as u64,
+        }));
         self.blocks.push(block);
 
         Ok(())
@@ -127,13 +130,19 @@ where
         assert_eq!(block.size(), self.chunk_size);
         let offset = block.range().start;
         let block_memory: *const B::Memory = block.memory();
-        let block_index = unsafe { block.0.dispose(); block.1 };
+        let block_index = unsafe {
+            block.0.dispose();
+            block.1
+        };
         assert!(::std::ptr::eq(
             self.blocks[block_index].memory(),
             block_memory
         ));
         let chunk_index = offset / self.chunk_size;
-        self.free.push_front(FreeBlock { block_index, chunk_index });
+        self.free.push_front(FreeBlock {
+            block_index,
+            chunk_index,
+        });
     }
 
     fn dispose(mut self, owner: &mut O, device: &B::Device) -> Result<(), Self> {
@@ -224,7 +233,10 @@ impl<T> ChunkedAllocator<T> {
     }
 
     fn chunk_size(&self, index: u8) -> u64 {
-        min(self.block_size(index) * self.blocks_per_chunk as u64, self.max_chunk_size)
+        min(
+            self.block_size(index) * self.blocks_per_chunk as u64,
+            self.max_chunk_size,
+        )
     }
 
     fn pick_node(&self, size: u64) -> u8 {

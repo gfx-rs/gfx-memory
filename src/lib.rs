@@ -164,7 +164,6 @@ pub trait MemoryAllocator<B: Backend>: Debug {
 
 /// Trait that allows to sub-allocate memory blocks from another allocator.
 pub trait MemorySubAllocator<B: Backend, O> {
-
     /// Information required to allocate block.
     type Request;
 
