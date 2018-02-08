@@ -1,9 +1,11 @@
+use std::ops::Range;
+
 use gfx_hal::{Backend, MemoryProperties, MemoryType, MemoryTypeId};
 use gfx_hal::memory::{Properties, Requirements};
 
 use {MemoryAllocator, MemoryError};
-use block::{Block, TaggedBlock};
-use combined::{CombinedAllocator, Type};
+use block::Block;
+use combined::{CombinedAllocator, CombinedBlock, Type};
 
 /// Allocator that can choose memory type based on requirements, and keeps track of allocators
 /// for all given memory types.
@@ -67,14 +69,14 @@ where
     B: Backend,
 {
     type Request = (Type, Properties);
-    type Block = TaggedBlock<B, Tag>;
+    type Block = SmartBlock<B>;
 
     fn alloc(
         &mut self,
         device: &B::Device,
         (ty, prop): (Type, Properties),
         reqs: Requirements,
-    ) -> Result<TaggedBlock<B, Tag>, MemoryError> {
+    ) -> Result<SmartBlock<B>, MemoryError> {
         let ref mut heaps = self.heaps;
         let allocators = self.allocators.iter_mut().enumerate();
 
@@ -98,13 +100,13 @@ where
         let block = allocator.alloc(device, ty, reqs)?;
         heaps[memory_type.heap_index].alloc(block.size());
 
-        Ok(block.convert_tag(|tag| Tag(index, tag)))
+        Ok(SmartBlock(block, index))
     }
 
-    fn free(&mut self, device: &B::Device, block: TaggedBlock<B, Tag>) {
-        let (block, Tag(index, tag)) = block.take_tag();
+    fn free(&mut self, device: &B::Device, block: SmartBlock<B>) {
+        let SmartBlock(block, index) = block;
         self.heaps[self.allocators[index].0.heap_index].free(block.size());
-        self.allocators[index].1.free(device, block.set_tag(tag));
+        self.allocators[index].1.free(device, block);
     }
 
     fn is_used(&self) -> bool {
@@ -149,5 +151,23 @@ impl Heap {
 ///
 /// `SmartAllocator` places this tag on the memory blocks, and then use it in
 /// `free` to find the memory node the block was allocated from.
-#[derive(Debug, Clone, Copy)]
-pub struct Tag(usize, ::combined::Tag);
+#[derive(Debug)]
+pub struct SmartBlock<B: Backend>(CombinedBlock<B>, usize);
+
+impl<B> Block<B> for SmartBlock<B>
+where
+    B: Backend,
+{
+    /// Get memory of the block.
+    #[inline(always)]
+    fn memory(&self) -> &B::Memory {
+        // Has to be valid
+        self.0.memory()
+    }
+
+    /// Get memory range of the block.
+    #[inline(always)]
+    fn range(&self) -> Range<u64> {
+        self.0.range()
+    }
+}

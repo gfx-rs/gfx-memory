@@ -1,6 +1,6 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::error::Error;
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::ops::Range;
 
 use gfx_hal::{Backend, Device};
@@ -97,30 +97,31 @@ pub trait Factory<B: Backend> {
 /// - `I`: Item type produced by the `Factory` (hal `Buffer` or `Image`)
 /// - `B`: Memory block type (see `Block`)
 #[derive(Debug)]
-pub struct Item<I, B> {
+pub struct Item<I, T> {
     raw: I,
     size: u64,
-    block: B,
+    block: T,
 }
 
-impl<I, B> Borrow<I> for Item<I, B> {
+impl<I, T> Borrow<I> for Item<I, T> {
     fn borrow(&self) -> &I {
         &self.raw
     }
 }
 
-impl<I, B> BorrowMut<I> for Item<I, B> {
+impl<I, T> BorrowMut<I> for Item<I, T> {
     fn borrow_mut(&mut self) -> &mut I {
         &mut self.raw
     }
 }
 
-impl<X, I, B> Block<X> for Item<I, B>
+impl<B, I, T> Block<B> for Item<I, T>
 where
-    X: Backend,
-    B: Block<X>,
+    B: Backend,
+    T: Block<B>,
+    I: Debug + Send + Sync,
 {
-    fn memory(&self) -> &X::Memory {
+    fn memory(&self) -> &B::Memory {
         self.block.memory()
     }
 

@@ -43,13 +43,13 @@
 extern crate gfx_hal;
 extern crate relevant;
 
-pub use arena::ArenaAllocator;
-pub use block::{Block, TaggedBlock};
-pub use chunked::ChunkedAllocator;
-pub use combined::{CombinedAllocator, Type};
+pub use arena::{ArenaAllocator, ArenaBlock};
+pub use block::{Block, RawBlock};
+pub use chunked::{ChunkedAllocator, ChunkedBlock};
+pub use combined::{CombinedAllocator, CombinedBlock, Type};
 pub use factory::{Factory, FactoryError, Item};
 pub use root::RootAllocator;
-pub use smart::SmartAllocator;
+pub use smart::{SmartAllocator, SmartBlock};
 
 use std::cmp::PartialOrd;
 use std::error::Error;
@@ -163,9 +163,7 @@ pub trait MemoryAllocator<B: Backend>: Debug {
 }
 
 /// Trait that allows to sub-allocate memory blocks from another allocator.
-pub trait MemorySubAllocator<B: Backend> {
-    /// Type of allocator for this sub-allocator.
-    type Owner;
+pub trait MemorySubAllocator<B: Backend, O> {
 
     /// Information required to allocate block.
     type Request;
@@ -192,7 +190,7 @@ pub trait MemorySubAllocator<B: Backend> {
     /// allocated, a `MemoryError` is returned.
     fn alloc(
         &mut self,
-        owner: &mut Self::Owner,
+        owner: &mut O,
         device: &B::Device,
         request: Self::Request,
         reqs: Requirements,
@@ -208,11 +206,7 @@ pub trait MemorySubAllocator<B: Backend> {
     /// - `owner`: allocator that was used to allocate the inner memory blocks
     /// - `device`: same device that was used to allocate the block of memory
     /// - `block`: block of memory to free
-    fn free(&mut self, owner: &mut Self::Owner, device: &B::Device, block: Self::Block);
-
-    /// Check if any of the blocks allocated by this allocator are still in use.
-    /// If this function returns `false`, the allocator can be `dispose`d.
-    fn is_used(&self) -> bool;
+    fn free(&mut self, owner: &mut O, device: &B::Device, block: Self::Block);
 
     /// Attempt to dispose of this allocator.
     ///
@@ -227,7 +221,7 @@ pub trait MemorySubAllocator<B: Backend> {
     /// ### Returns
     ///
     /// If the allocator contains memory blocks that are still in use, this will return `Err(self)`.
-    fn dispose(self, owner: &mut Self::Owner, device: &B::Device) -> Result<(), Self>
+    fn dispose(self, owner: &mut O, device: &B::Device) -> Result<(), Self>
     where
         Self: Sized;
 }

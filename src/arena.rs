@@ -1,11 +1,12 @@
 use std::collections::VecDeque;
 use std::mem::replace;
+use std::ops::Range;
 
 use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
 
 use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
-use block::{Block, TaggedBlock};
+use block::{Block, RawBlock};
 
 /// Linear allocator that can be used for short-lived objects.
 ///
@@ -14,19 +15,15 @@ use block::{Block, TaggedBlock};
 /// - `B`: hal `Backend`
 /// - `A`: allocator used to allocate bigger blocks of memory
 #[derive(Debug)]
-pub struct ArenaAllocator<B: Backend, A: MemoryAllocator<B>> {
+pub struct ArenaAllocator<T> {
     id: MemoryTypeId,
     arena_size: u64,
     freed: u64,
-    hot: Option<ArenaNode<B, A>>,
-    nodes: VecDeque<ArenaNode<B, A>>,
+    hot: Option<ArenaNode<T>>,
+    nodes: VecDeque<ArenaNode<T>>,
 }
 
-impl<B, A> ArenaAllocator<B, A>
-where
-    B: Backend,
-    A: MemoryAllocator<B>,
-{
+impl<T> ArenaAllocator<T> {
     /// Create a new arena allocator
     ///
     /// ### Parameters:
@@ -43,6 +40,16 @@ where
         }
     }
 
+    /// Check if any of the blocks allocated by this allocator are still in use.
+    /// If this function returns `false`, the allocator can be `dispose`d.
+    pub fn is_used(&self) -> bool {
+        !self.nodes.is_empty()
+            && self.hot
+                .as_ref()
+                .map(|node| node.is_used())
+                .unwrap_or(false)
+    }
+
     /// Get memory type of the allocator
     pub fn memory_type(&self) -> MemoryTypeId {
         self.id
@@ -53,7 +60,12 @@ where
         self.arena_size
     }
 
-    fn cleanup(&mut self, owner: &mut A, device: &B::Device) {
+    fn cleanup<B, A>(&mut self, owner: &mut A, device: &B::Device)
+    where
+        B: Backend,
+        T: Block<B>,
+        A: MemoryAllocator<B, Block = T>,
+    {
         while self.nodes
             .front()
             .map(|node| !node.is_used())
@@ -73,13 +85,18 @@ where
         }
     }
 
-    fn allocate_node(
+    fn allocate_node<B, A>(
         &mut self,
         owner: &mut A,
         device: &B::Device,
         request: A::Request,
         reqs: Requirements,
-    ) -> Result<ArenaNode<B, A>, MemoryError> {
+    ) -> Result<ArenaNode<T>, MemoryError>
+    where
+        B: Backend,
+        T: Block<B>,
+        A: MemoryAllocator<B, Block = T>,
+    {
         let arena_size = ((reqs.size - 1) / self.arena_size + 1) * self.arena_size;
         let arena_requirements = Requirements {
             type_mask: 1 << self.id.0,
@@ -91,29 +108,29 @@ where
     }
 }
 
-impl<B, A> MemorySubAllocator<B> for ArenaAllocator<B, A>
+impl<B, O, T> MemorySubAllocator<B, O> for ArenaAllocator<T>
 where
     B: Backend,
-    A: MemoryAllocator<B>,
+    T: Block<B>,
+    O: MemoryAllocator<B, Block = T>,
 {
-    type Owner = A;
-    type Request = A::Request;
-    type Block = TaggedBlock<B, Tag>;
+    type Request = O::Request;
+    type Block = ArenaBlock<B>;
 
     fn alloc(
         &mut self,
-        owner: &mut A,
+        owner: &mut O,
         device: &B::Device,
-        request: A::Request,
+        request: O::Request,
         reqs: Requirements,
-    ) -> Result<TaggedBlock<B, Tag>, MemoryError> {
+    ) -> Result<ArenaBlock<B>, MemoryError> {
         if (1 << self.id.0) & reqs.type_mask == 0 {
             return Err(MemoryError::NoCompatibleMemoryType);
         }
-        let count = self.freed + self.nodes.len() as u64;
+        let index = self.freed + self.nodes.len() as u64;
         if let Some(ref mut hot) = self.hot.as_mut() {
             match hot.alloc(reqs) {
-                Some(block) => return Ok(block.set_tag(Tag(count))),
+                Some(block) => return Ok(ArenaBlock(block, index)),
                 None => {}
             }
         };
@@ -126,13 +143,13 @@ where
                 Err(hot) => self.nodes.push_back(hot),
             }
         };
-        let count = self.freed + self.nodes.len() as u64;
-        Ok(block.set_tag(Tag(count)))
+        let index = self.freed + self.nodes.len() as u64;
+        Ok(ArenaBlock(block, index))
     }
 
-    fn free(&mut self, owner: &mut A, device: &B::Device, block: TaggedBlock<B, Tag>) {
-        let (block, Tag(tag)) = block.replace_tag(());
-        let index = (tag - self.freed) as usize;
+    fn free(&mut self, owner: &mut O, device: &B::Device, block: ArenaBlock<B>) {
+        let ArenaBlock(block, index) = block;
+        let index = (index - self.freed) as usize;
 
         match self.nodes.len() {
             len if len == index => {
@@ -146,15 +163,7 @@ where
         }
     }
 
-    fn is_used(&self) -> bool {
-        self.nodes.is_empty()
-            && self.hot
-                .as_ref()
-                .map(|node| node.is_used())
-                .unwrap_or(false)
-    }
-
-    fn dispose(mut self, owner: &mut A, device: &B::Device) -> Result<(), Self> {
+    fn dispose(mut self, owner: &mut O, device: &B::Device) -> Result<(), Self> {
         if self.is_used() {
             Err(self)
         } else {
@@ -167,18 +176,14 @@ where
 }
 
 #[derive(Debug)]
-struct ArenaNode<B: Backend, A: MemoryAllocator<B>> {
+struct ArenaNode<T> {
     used: u64,
     freed: u64,
-    block: A::Block,
+    block: T,
 }
 
-impl<B, A> ArenaNode<B, A>
-where
-    B: Backend,
-    A: MemoryAllocator<B>,
-{
-    fn new(block: A::Block) -> Self {
+impl<T> ArenaNode<T> {
+    fn new(block: T) -> Self {
         ArenaNode {
             used: 0,
             freed: 0,
@@ -186,7 +191,10 @@ where
         }
     }
 
-    fn alloc(&mut self, reqs: Requirements) -> Option<TaggedBlock<B, ()>> {
+    fn alloc<B: Backend>(&mut self, reqs: Requirements) -> Option<RawBlock<B>>
+    where
+        T: Block<B>,
+    {
         let offset = self.block.range().start + self.used;
         let total_size = reqs.size + alignment_shift(reqs.alignment, offset);
 
@@ -194,14 +202,17 @@ where
             None
         } else {
             self.used += total_size;
-            Some(TaggedBlock::new(
+            Some(RawBlock::new(
                 self.block.memory(),
                 offset..total_size + offset,
             ))
         }
     }
 
-    fn free(&mut self, block: TaggedBlock<B, ()>) {
+    fn free<B: Backend>(&mut self, block: RawBlock<B>)
+    where
+        T: Block<B>,
+    {
         assert!(self.block.contains(&block));
         self.freed += block.size();
         unsafe { block.dispose() }
@@ -211,7 +222,12 @@ where
         self.freed != self.used
     }
 
-    fn dispose(self, owner: &mut A, device: &B::Device) -> Result<(), Self> {
+    fn dispose<B, A>(self, owner: &mut A, device: &B::Device) -> Result<(), Self>
+    where
+        B: Backend,
+        T: Block<B>,
+        A: MemoryAllocator<B, Block=T>,
+    {
         if self.is_used() {
             Err(self)
         } else {
@@ -225,5 +241,23 @@ where
 ///
 /// `ArenaAllocator` places this tag on the memory blocks, and then use it in
 /// `free` to find the memory node the block was allocated from.
-#[derive(Debug, Clone, Copy)]
-pub struct Tag(u64);
+#[derive(Debug)]
+pub struct ArenaBlock<B: Backend>(pub(crate) RawBlock<B>, pub(crate) u64);
+
+impl<B> Block<B> for ArenaBlock<B>
+where
+    B: Backend,
+{
+    /// Get memory of the block.
+    #[inline(always)]
+    fn memory(&self) -> &B::Memory {
+        // Has to be valid
+        self.0.memory()
+    }
+
+    /// Get memory range of the block.
+    #[inline(always)]
+    fn range(&self) -> Range<u64> {
+        self.0.range()
+    }
+}

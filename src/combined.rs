@@ -1,10 +1,12 @@
+use std::ops::Range;
+
 use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
 
 use {MemoryAllocator, MemoryError, MemorySubAllocator};
-use arena::ArenaAllocator;
-use block::TaggedBlock;
-use chunked::ChunkedAllocator;
+use arena::{ArenaAllocator, ArenaBlock};
+use block::{Block, RawBlock};
+use chunked::{ChunkedAllocator, ChunkedBlock};
 use root::RootAllocator;
 
 /// Controls what sub allocator is used for an allocation by `CombinedAllocator`
@@ -32,8 +34,8 @@ where
     B: Backend,
 {
     root: RootAllocator<B>,
-    arenas: ArenaAllocator<B, RootAllocator<B>>,
-    chunks: ChunkedAllocator<B, RootAllocator<B>>,
+    arenas: ArenaAllocator<RawBlock<B>>,
+    chunks: ChunkedAllocator<RawBlock<B>>,
 }
 
 impl<B> CombinedAllocator<B>
@@ -79,38 +81,39 @@ where
     B: Backend,
 {
     type Request = Type;
-    type Block = TaggedBlock<B, Tag>;
+    type Block = CombinedBlock<B>;
 
     fn alloc(
         &mut self,
         device: &B::Device,
         request: Type,
         reqs: Requirements,
-    ) -> Result<TaggedBlock<B, Tag>, MemoryError> {
+    ) -> Result<CombinedBlock<B>, MemoryError> {
         match request {
-            Type::ShortLived => self.arenas
-                .alloc(&mut self.root, device, (), reqs)
-                .map(|block| block.convert_tag(Tag::Arena)),
+            Type::ShortLived => {
+                self.arenas
+                    .alloc(&mut self.root, device, (), reqs)
+                    .map(|ArenaBlock(block, tag)| CombinedBlock(block, CombinedTag::Arena(tag)))
+            }
             Type::General => {
                 if reqs.size > self.chunks.max_chunk_size() {
                     self.root
                         .alloc(device, (), reqs)
-                        .map(|block| block.set_tag(Tag::Root))
+                        .map(|block| CombinedBlock(block, CombinedTag::Root))
                 } else {
                     self.chunks
                         .alloc(&mut self.root, device, (), reqs)
-                        .map(|block| block.convert_tag(Tag::Chunked))
+                        .map(|ChunkedBlock(block, tag)| CombinedBlock(block, CombinedTag::Chunked(tag)))
                 }
             }
         }
     }
 
-    fn free(&mut self, device: &B::Device, block: TaggedBlock<B, Tag>) {
-        let (block, tag) = block.take_tag();
-        match tag {
-            Tag::Arena(tag) => self.arenas.free(&mut self.root, device, block.set_tag(tag)),
-            Tag::Chunked(tag) => self.chunks.free(&mut self.root, device, block.set_tag(tag)),
-            Tag::Root => self.root.free(device, block),
+    fn free(&mut self, device: &B::Device, block: CombinedBlock<B>) {
+        match block.1 {
+            CombinedTag::Arena(tag) => self.arenas.free(&mut self.root, device, ArenaBlock(block.0, tag)),
+            CombinedTag::Chunked(tag) => self.chunks.free(&mut self.root, device, ChunkedBlock(block.0, tag)),
+            CombinedTag::Root => self.root.free(device, block.0),
         }
     }
 
@@ -159,9 +162,30 @@ where
 ///
 /// `CombinedAllocator` places this tag on the memory blocks, and then use it in
 /// `free` to find the memory node the block was allocated from.
-#[derive(Debug, Clone, Copy)]
-pub enum Tag {
-    Arena(::arena::Tag),
-    Chunked(::chunked::Tag),
+#[derive(Debug)]
+pub struct CombinedBlock<B: Backend>(pub(crate) RawBlock<B>, pub(crate) CombinedTag);
+
+#[derive(Debug)]
+pub(crate) enum CombinedTag {
+    Arena(u64),
+    Chunked(usize),
     Root,
+}
+
+impl<B> Block<B> for CombinedBlock<B>
+where
+    B: Backend,
+{
+    /// Get memory of the block.
+    #[inline(always)]
+    fn memory(&self) -> &B::Memory {
+        // Has to be valid
+        self.0.memory()
+    }
+
+    /// Get memory range of the block.
+    #[inline(always)]
+    fn range(&self) -> Range<u64> {
+        self.0.range()
+    }
 }

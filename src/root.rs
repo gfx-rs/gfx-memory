@@ -4,7 +4,7 @@ use gfx_hal::{Backend, Device, MemoryTypeId};
 use gfx_hal::memory::Requirements;
 
 use {MemoryAllocator, MemoryError};
-use block::{Block, TaggedBlock};
+use block::{Block, RawBlock};
 use relevant::Relevant;
 
 /// Allocator that allocates memory directly from device.
@@ -46,21 +46,21 @@ where
     B: Backend,
 {
     type Request = ();
-    type Block = TaggedBlock<B, ()>;
+    type Block = RawBlock<B>;
 
     fn alloc(
         &mut self,
         device: &B::Device,
         _: (),
         reqs: Requirements,
-    ) -> Result<TaggedBlock<B, ()>, MemoryError> {
+    ) -> Result<RawBlock<B>, MemoryError> {
         let memory = device.allocate_memory(self.id, reqs.size)?;
         let memory = Box::into_raw(Box::new(memory)); // Suboptimal
         self.allocations += 1;
-        Ok(TaggedBlock::new(memory, 0..reqs.size))
+        Ok(RawBlock::new(memory, 0..reqs.size))
     }
 
-    fn free(&mut self, device: &B::Device, block: TaggedBlock<B, ()>) {
+    fn free(&mut self, device: &B::Device, block: RawBlock<B>) {
         assert_eq!(block.range().start, 0);
         device.free_memory(*unsafe { Box::from_raw(block.memory() as *const _ as *mut _) });
         unsafe { block.dispose() };

@@ -29,22 +29,26 @@ use gfx_mem::{MemoryAllocator, SmartAllocator, Type, Block};
 
 type SmartBlock<B> = <SmartAllocator<B> as MemoryAllocator<B>>::Block;
 
-fn make_vertex_buffer<B: Backend>(device: &B::Device,
-                                  allocator: &mut SmartAllocator<B>,
-                                  size: u64
-) -> Result<(SmartBlock<B>, B::Buffer), Box<Error>>
-{
+fn make_vertex_buffer<B: Backend>(
+    device: &B::Device,
+    allocator: &mut SmartAllocator<B>,
+    size: u64,
+) -> Result<(SmartBlock<B>, B::Buffer), Box<Error>> {
     // Create unbounded buffer object. It has no memory assigned.
     let ubuf: B::UnboundBuffer = device.create_buffer(size, Usage::VERTEX).map_err(Box::new)?;
     // Ger memory requirements for the buffer.
     let reqs = device.get_buffer_requirements(&ubuf);
     // Allocate block of device-local memory that satisfy requirements for buffer.
-    let block = allocator.alloc(device, (Type::General, Properties::DEVICE_LOCAL), reqs).map_err(Box::new)?;
+    let block = allocator
+        .alloc(device, (Type::General, Properties::DEVICE_LOCAL), reqs)
+        .map_err(Box::new)?;
     // Bind memory block to the buffer.
-    Ok(device.bind_buffer_memory(block.memory(), block.range().start, ubuf)
-             .map(|buffer| (block, buffer))
-             .map_err(Box::new)?)
+    Ok(device
+        .bind_buffer_memory(block.memory(), block.range().start, ubuf)
+        .map(|buffer| (block, buffer))
+        .map_err(Box::new)?)
 }
+
 ```
 
 This crate is mid-level and it requires the user to follow a few simple rules:
