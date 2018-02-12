@@ -328,3 +328,12 @@ where
         self.0.range()
     }
 }
+
+#[test]
+#[allow(dead_code)]
+fn test_send_sync() {
+    fn foo<T: Send + Sync>() {}
+    fn bar<M: Send + Sync>() {
+        foo::<ChunkedAllocator<M>>()
+    }
+}

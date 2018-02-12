@@ -17,7 +17,7 @@ pub struct RootAllocator<B> {
     relevant: Relevant,
     id: MemoryTypeId,
     allocations: usize,
-    pd: PhantomData<B>,
+    pd: PhantomData<fn() -> B>,
 }
 
 impl<B> RootAllocator<B> {
@@ -78,5 +78,14 @@ where
             self.relevant.dispose();
             Ok(())
         }
+    }
+}
+
+#[test]
+#[allow(dead_code)]
+fn test_send_sync() {
+    fn foo<T: Send + Sync>() {}
+    fn bar<B: Backend>() {
+        foo::<RootAllocator<B>>()
     }
 }
