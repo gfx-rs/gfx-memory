@@ -1,3 +1,5 @@
+use std::any::Any;
+use std::fmt::Debug;
 use std::ops::Range;
 
 use gfx_hal::{Backend, MemoryProperties, MemoryType, MemoryTypeId};
@@ -69,14 +71,14 @@ where
     B: Backend,
 {
     type Request = (Type, Properties);
-    type Block = SmartBlock<B>;
+    type Block = SmartBlock<B::Memory>;
 
     fn alloc(
         &mut self,
         device: &B::Device,
         (ty, prop): (Type, Properties),
         reqs: Requirements,
-    ) -> Result<SmartBlock<B>, MemoryError> {
+    ) -> Result<SmartBlock<B::Memory>, MemoryError> {
         let mut compatible = false;
         let mut candidate = None;
 
@@ -124,7 +126,7 @@ where
         }
     }
 
-    fn free(&mut self, device: &B::Device, block: SmartBlock<B>) {
+    fn free(&mut self, device: &B::Device, block: SmartBlock<B::Memory>) {
         let SmartBlock(block, index) = block;
         self.heaps[self.allocators[index].0.heap_index].free(block.size());
         self.allocators[index].1.free(device, block);
@@ -172,25 +174,21 @@ impl Heap {
     }
 }
 
-/// Opaque type for `Block` tag used by the `SmartAllocator`.
-///
-/// `SmartAllocator` places this tag on the memory blocks, and then use it in
-/// `free` to find the memory node the block was allocated from.
+/// `Block` type returned by `SmartAllocator`.
 #[derive(Debug)]
-pub struct SmartBlock<B: Backend>(CombinedBlock<B>, usize);
+pub struct SmartBlock<M>(CombinedBlock<M>, usize);
 
-impl<B> Block<B> for SmartBlock<B>
+impl<M> Block for SmartBlock<M>
 where
-    B: Backend,
+    M: Debug + Any,
 {
-    /// Get memory of the block.
+    type Memory = M;
+
     #[inline(always)]
-    fn memory(&self) -> &B::Memory {
-        // Has to be valid
+    fn memory(&self) -> &M {
         self.0.memory()
     }
 
-    /// Get memory range of the block.
     #[inline(always)]
     fn range(&self) -> Range<u64> {
         self.0.range()

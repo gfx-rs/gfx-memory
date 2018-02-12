@@ -11,14 +11,12 @@
 //! use gfx_hal::{Backend, Device};
 //! use gfx_hal::buffer::Usage;
 //! use gfx_hal::memory::Properties;
-//! use gfx_mem::{MemoryAllocator, SmartAllocator, Type, Block};
-//!
-//! type SmartBlock<B> = <SmartAllocator<B> as MemoryAllocator<B>>::Block;
+//! use gfx_mem::{MemoryAllocator, SmartAllocator, SmartBlock, Type, Block};
 //!
 //! fn make_vertex_buffer<B: Backend>(device: &B::Device,
 //!                                   allocator: &mut SmartAllocator<B>,
 //!                                   size: u64
-//! ) -> Result<(SmartBlock<B>, B::Buffer), Box<Error>>
+//! ) -> Result<(SmartBlock<B::Memory>, B::Buffer), Box<Error>>
 //! {
 //!     // Create unbounded buffer object. It has no memory assigned.
 //!     let ubuf: B::UnboundBuffer = device.create_buffer(size, Usage::VERTEX).map_err(Box::new)?;
@@ -109,7 +107,7 @@ pub trait MemoryAllocator<B: Backend>: Debug {
     type Request;
 
     /// Allocator will allocate blocks of this type.
-    type Block: Block<B> + Debug + Send + Sync;
+    type Block: Block<Memory = B::Memory> + Debug + Send + Sync;
 
     /// Allocate a block of memory.
     ///
@@ -168,7 +166,7 @@ pub trait MemorySubAllocator<B: Backend, O> {
     type Request;
 
     /// Allocator will allocate blocks of this type.
-    type Block: Block<B> + Debug + Send + Sync;
+    type Block: Block<Memory = B::Memory> + Debug + Send + Sync;
 
     /// Allocate a block of memory from this allocator.
     /// This allocator will use `owner` to allocate memory in bigger chunks.

@@ -1,5 +1,7 @@
+use std::any::Any;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::ops::Range;
 
 use gfx_hal::{Backend, MemoryTypeId};
@@ -54,7 +56,7 @@ impl<T> ChunkedNode<T> {
     ) -> Result<(), MemoryError>
     where
         B: Backend,
-        T: Block<B>,
+        T: Block<Memory = B::Memory>,
         A: MemoryAllocator<B, Block = T>,
     {
         let reqs = Requirements {
@@ -77,10 +79,10 @@ impl<T> ChunkedNode<T> {
         Ok(())
     }
 
-    fn alloc_no_grow<B>(&mut self) -> Option<ChunkedBlock<B>>
+    fn alloc_no_grow<M>(&mut self) -> Option<ChunkedBlock<M>>
     where
-        B: Backend,
-        T: Block<B>,
+        M: Debug + Any,
+        T: Block<Memory = M>,
     {
         self.free.pop_front().map(|free_block| {
             let offset = free_block.chunk_index * self.chunk_size;
@@ -96,11 +98,11 @@ impl<T> ChunkedNode<T> {
 impl<B, O, T> MemorySubAllocator<B, O> for ChunkedNode<T>
 where
     B: Backend,
-    T: Block<B>,
+    T: Block<Memory = B::Memory>,
     O: MemoryAllocator<B, Block = T>,
 {
     type Request = O::Request;
-    type Block = ChunkedBlock<B>;
+    type Block = ChunkedBlock<B::Memory>;
 
     fn alloc(
         &mut self,
@@ -108,7 +110,7 @@ where
         device: &B::Device,
         request: O::Request,
         reqs: Requirements,
-    ) -> Result<ChunkedBlock<B>, MemoryError> {
+    ) -> Result<ChunkedBlock<B::Memory>, MemoryError> {
         if (1 << self.id.0) & reqs.type_mask == 0 {
             return Err(MemoryError::NoCompatibleMemoryType);
         }
@@ -125,7 +127,7 @@ where
         })
     }
 
-    fn free(&mut self, _owner: &mut O, _device: &B::Device, block: ChunkedBlock<B>) {
+    fn free(&mut self, _owner: &mut O, _device: &B::Device, block: ChunkedBlock<B::Memory>) {
         assert_eq!(block.range().start % self.chunk_size, 0);
         assert_eq!(block.size(), self.chunk_size);
         let offset = block.range().start;
@@ -162,8 +164,7 @@ where
 ///
 /// ### Type parameters:
 ///
-/// - `B`: hal `Backend`
-/// - `A`: allocator used to allocate bigger blocks of memory
+/// - `T`: type of bigger blocks this allcator sub-allocates from.
 #[derive(Debug)]
 pub struct ChunkedAllocator<T> {
     id: MemoryTypeId,
@@ -186,13 +187,15 @@ impl<T> ChunkedAllocator<T> {
     ///
     /// ### Panics
     ///
-    /// Panics if `chunk_size` or `min_block_size` are not a power of two.
+    /// Panics if `min_block_size` or `max_chunk_size` are not a power of two.
     pub fn new(
         blocks_per_chunk: usize,
         min_block_size: u64,
         max_chunk_size: u64,
         id: MemoryTypeId,
     ) -> Self {
+        assert!(min_block_size.is_power_of_two());
+        assert!(max_chunk_size.is_power_of_two());
         ChunkedAllocator {
             id,
             blocks_per_chunk,
@@ -267,11 +270,11 @@ impl<T> ChunkedAllocator<T> {
 impl<B, O, T> MemorySubAllocator<B, O> for ChunkedAllocator<T>
 where
     B: Backend,
-    T: Block<B>,
+    T: Block<Memory = B::Memory>,
     O: MemoryAllocator<B, Block = T>,
 {
     type Request = O::Request;
-    type Block = ChunkedBlock<B>;
+    type Block = ChunkedBlock<B::Memory>;
 
     fn alloc(
         &mut self,
@@ -279,7 +282,7 @@ where
         device: &B::Device,
         request: O::Request,
         reqs: Requirements,
-    ) -> Result<ChunkedBlock<B>, MemoryError> {
+    ) -> Result<ChunkedBlock<B::Memory>, MemoryError> {
         if reqs.size > self.max_chunk_size {
             return Err(MemoryError::OutOfMemory);
         }
@@ -288,7 +291,7 @@ where
         self.nodes[index as usize].alloc(owner, device, request, reqs)
     }
 
-    fn free(&mut self, owner: &mut O, device: &B::Device, block: ChunkedBlock<B>) {
+    fn free(&mut self, owner: &mut O, device: &B::Device, block: ChunkedBlock<B::Memory>) {
         let index = self.pick_node(block.size());
         self.nodes[index as usize].free(owner, device, block);
     }
@@ -305,25 +308,21 @@ where
     }
 }
 
-/// Opaque type for `Block` tag used by the `ChunkedAllocator`.
-///
-/// `ChunkedAllocator` places this tag on the memory blocks, and then use it in
-/// `free` to find the memory node the block was allocated from.
+/// `Block` type returned by `ChunkedAllocator`.
 #[derive(Debug)]
-pub struct ChunkedBlock<B: Backend>(pub(crate) RawBlock<B>, pub(crate) usize);
+pub struct ChunkedBlock<M>(pub(crate) RawBlock<M>, pub(crate) usize);
 
-impl<B> Block<B> for ChunkedBlock<B>
+impl<M> Block for ChunkedBlock<M>
 where
-    B: Backend,
+    M: Debug + Any,
 {
-    /// Get memory of the block.
+    type Memory = M;
+
     #[inline(always)]
-    fn memory(&self) -> &B::Memory {
-        // Has to be valid
+    fn memory(&self) -> &M {
         self.0.memory()
     }
 
-    /// Get memory range of the block.
     #[inline(always)]
     fn range(&self) -> Range<u64> {
         self.0.range()

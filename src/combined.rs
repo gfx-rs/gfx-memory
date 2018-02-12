@@ -1,3 +1,5 @@
+use std::any::Any;
+use std::fmt::Debug;
 use std::ops::Range;
 
 use gfx_hal::{Backend, MemoryTypeId};
@@ -34,8 +36,8 @@ where
     B: Backend,
 {
     root: RootAllocator<B>,
-    arenas: ArenaAllocator<RawBlock<B>>,
-    chunks: ChunkedAllocator<RawBlock<B>>,
+    arenas: ArenaAllocator<RawBlock<B::Memory>>,
+    chunks: ChunkedAllocator<RawBlock<B::Memory>>,
 }
 
 impl<B> CombinedAllocator<B>
@@ -81,14 +83,14 @@ where
     B: Backend,
 {
     type Request = Type;
-    type Block = CombinedBlock<B>;
+    type Block = CombinedBlock<B::Memory>;
 
     fn alloc(
         &mut self,
         device: &B::Device,
         request: Type,
         reqs: Requirements,
-    ) -> Result<CombinedBlock<B>, MemoryError> {
+    ) -> Result<CombinedBlock<B::Memory>, MemoryError> {
         match request {
             Type::ShortLived => self.arenas
                 .alloc(&mut self.root, device, (), reqs)
@@ -107,7 +109,7 @@ where
         }
     }
 
-    fn free(&mut self, device: &B::Device, block: CombinedBlock<B>) {
+    fn free(&mut self, device: &B::Device, block: CombinedBlock<B::Memory>) {
         match block.1 {
             CombinedTag::Arena(tag) => {
                 self.arenas
@@ -162,12 +164,9 @@ where
     }
 }
 
-/// Opaque type for `Block` tag used by the `CombinedAllocator`.
-///
-/// `CombinedAllocator` places this tag on the memory blocks, and then use it in
-/// `free` to find the memory node the block was allocated from.
+/// `Block` type returned by `CombinedAllocator`.
 #[derive(Debug)]
-pub struct CombinedBlock<B: Backend>(pub(crate) RawBlock<B>, pub(crate) CombinedTag);
+pub struct CombinedBlock<M>(pub(crate) RawBlock<M>, pub(crate) CombinedTag);
 
 #[derive(Debug)]
 pub(crate) enum CombinedTag {
@@ -176,18 +175,17 @@ pub(crate) enum CombinedTag {
     Root,
 }
 
-impl<B> Block<B> for CombinedBlock<B>
+impl<M> Block for CombinedBlock<M>
 where
-    B: Backend,
+    M: Debug + Any,
 {
-    /// Get memory of the block.
+    type Memory = M;
+
     #[inline(always)]
-    fn memory(&self) -> &B::Memory {
-        // Has to be valid
+    fn memory(&self) -> &M {
         self.0.memory()
     }
 
-    /// Get memory range of the block.
     #[inline(always)]
     fn range(&self) -> Range<u64> {
         self.0.range()

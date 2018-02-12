@@ -20,11 +20,11 @@ use {MemoryAllocator, MemoryError};
 pub trait Factory<B: Backend> {
     /// Type of buffers this factory produce.
     /// The user can borrow the raw buffer.
-    type Buffer: BorrowMut<B::Buffer> + Block<B>;
+    type Buffer: BorrowMut<B::Buffer> + Block<Memory = B::Memory>;
 
     /// Type of images this factory produce.
     /// The user can borrow the raw image.
-    type Image: BorrowMut<B::Image> + Block<B>;
+    type Image: BorrowMut<B::Image> + Block<Memory = B::Memory>;
 
     /// Information required to produce a buffer.
     type BufferRequest;
@@ -95,7 +95,7 @@ pub trait Factory<B: Backend> {
 /// ### Type parameters:
 ///
 /// - `I`: Item type produced by the `Factory` (hal `Buffer` or `Image`)
-/// - `B`: Memory block type (see `Block`)
+/// - `T`: Memory block type (see `Block`)
 #[derive(Debug)]
 pub struct Item<I, T> {
     raw: I,
@@ -115,13 +115,14 @@ impl<I, T> BorrowMut<I> for Item<I, T> {
     }
 }
 
-impl<B, I, T> Block<B> for Item<I, T>
+impl<I, T> Block for Item<I, T>
 where
-    B: Backend,
-    T: Block<B>,
     I: Debug + Send + Sync,
+    T: Block,
 {
-    fn memory(&self) -> &B::Memory {
+    type Memory = T::Memory;
+
+    fn memory(&self) -> &T::Memory {
         self.block.memory()
     }
 
