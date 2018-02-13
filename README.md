@@ -1,7 +1,10 @@
 
-# gfx_mem - graphics memory management for gfx_hal.
+# gfx-memory - graphics memory management for gfx-hal.
+[![Build Status](https://travis-ci.org/gfx-rs/gfx-memory.svg)](https://travis-ci.org/gfx-rs/gfx-memory)
+[![Docs](https://docs.rs/gfx-memory/badge.svg)](https://docs.rs/gfx-memory)
+[![Crates.io](https://img.shields.io/crates/v/gfx-memory.svg?maxAge=2592000)](https://crates.io/crates/gfx-memory)
 
-This crate provides tools to manage GPU memory provided by `gfx_hal`.
+This crate provides tools to manage GPU memory provided by `gfx-hal`.
 
 The main tool is the `MemoryAllocator` trait, which can be used to allocate `Block`s of memory.
 The most notable `MemoryAllocator` implementation is `SmartAllocator` which can be used as-is.
@@ -10,7 +13,7 @@ for users who want to create their own implementations in case `SmartAllocator` 
 
 A `Factory` is also provided, that wraps the allocation logic in this crate, along with creation of memory resources
 on a `Device` (such as `Buffer` or `Image`). For most use cases, the `Factory` provides all capabilities needed to 
-manage memory based resources on a `gfx_hal` `Device`.
+manage memory based resources on a `gfx_hal::Device`.
 
 ### Example 
 
@@ -18,14 +21,14 @@ Simple example of using `SmartAllocator` to create a vertex `Buffer`:
 
 ```rust
 extern crate gfx_hal;
-extern crate gfx_mem;
+extern crate gfx_memory;
 
 use std::error::Error;
 
 use gfx_hal::{Backend, Device};
 use gfx_hal::buffer::Usage;
 use gfx_hal::memory::Properties;
-use gfx_mem::{MemoryAllocator, SmartAllocator, Type, Block};
+use gfx_memory::{MemoryAllocator, SmartAllocator, Type, Block};
 
 type SmartBlock<B> = <SmartAllocator<B> as MemoryAllocator<B>>::Block;
 

@@ -4,14 +4,14 @@
 //!
 //! ```rust
 //! extern crate gfx_hal;
-//! extern crate gfx_mem;
+//! extern crate gfx_memory;
 //!
 //! use std::error::Error;
 //!
 //! use gfx_hal::{Backend, Device};
 //! use gfx_hal::buffer::Usage;
 //! use gfx_hal::memory::Properties;
-//! use gfx_mem::{MemoryAllocator, SmartAllocator, SmartBlock, Type, Block};
+//! use gfx_memory::{MemoryAllocator, SmartAllocator, SmartBlock, Type, Block};
 //!
 //! fn make_vertex_buffer<B: Backend>(device: &B::Device,
 //!                                   allocator: &mut SmartAllocator<B>,
