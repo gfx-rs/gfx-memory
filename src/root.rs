@@ -17,7 +17,7 @@ pub struct RootAllocator<B> {
     relevant: Relevant,
     id: MemoryTypeId,
     allocations: usize,
-    pd: PhantomData<B>,
+    pd: PhantomData<fn() -> B>,
 }
 
 impl<B> RootAllocator<B> {
@@ -46,21 +46,21 @@ where
     B: Backend,
 {
     type Request = ();
-    type Block = RawBlock<B>;
+    type Block = RawBlock<B::Memory>;
 
     fn alloc(
         &mut self,
         device: &B::Device,
         _: (),
         reqs: Requirements,
-    ) -> Result<RawBlock<B>, MemoryError> {
+    ) -> Result<RawBlock<B::Memory>, MemoryError> {
         let memory = device.allocate_memory(self.id, reqs.size)?;
         let memory = Box::into_raw(Box::new(memory)); // Suboptimal
         self.allocations += 1;
         Ok(RawBlock::new(memory, 0..reqs.size))
     }
 
-    fn free(&mut self, device: &B::Device, block: RawBlock<B>) {
+    fn free(&mut self, device: &B::Device, block: RawBlock<B::Memory>) {
         assert_eq!(block.range().start, 0);
         device.free_memory(*unsafe { Box::from_raw(block.memory() as *const _ as *mut _) });
         unsafe { block.dispose() };
@@ -78,5 +78,14 @@ where
             self.relevant.dispose();
             Ok(())
         }
+    }
+}
+
+#[test]
+#[allow(dead_code)]
+fn test_send_sync() {
+    fn foo<T: Send + Sync>() {}
+    fn bar<B: Backend>() {
+        foo::<RootAllocator<B>>()
     }
 }

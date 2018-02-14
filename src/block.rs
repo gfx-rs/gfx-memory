@@ -1,14 +1,16 @@
+use std::any::Any;
 use std::fmt::Debug;
 use std::ops::Range;
-
-use gfx_hal::Backend;
 
 use relevant::Relevant;
 
 /// Trait for types that represent a block (`Range`) of `Memory`.
-pub trait Block<B: Backend>: Send + Sync + Debug {
+pub trait Block: Send + Sync + Debug {
+    /// Memory type
+    type Memory: Debug + Any;
+
     /// `Memory` instance of the block.
-    fn memory(&self) -> &B::Memory;
+    fn memory(&self) -> &Self::Memory;
 
     /// `Range` of the memory this block occupy.
     fn range(&self) -> Range<u64>;
@@ -27,10 +29,10 @@ pub trait Block<B: Backend>: Send + Sync + Debug {
     ///
     /// ### Type parameters:
     ///
-    /// - `T`: tag of potential child block
+    /// - `T`: block with same memory type.
     fn contains<T>(&self, other: &T) -> bool
     where
-        T: Block<B>,
+        T: Block<Memory = Self::Memory>,
     {
         use std::ptr::eq;
         eq(self.memory(), other.memory()) && self.range().start <= other.range().start
@@ -45,31 +47,19 @@ pub trait Block<B: Backend>: Send + Sync + Debug {
 ///
 /// ### Type parameters:
 ///
-/// - `B`: hal `Backend`
-/// - `T`: tag type, used by allocators to track allocations
+/// - `M`: hal memory type.
 #[derive(Debug)]
-pub struct RawBlock<B: Backend> {
+pub struct RawBlock<M> {
     relevant: Relevant,
     range: Range<u64>,
-    memory: *const B::Memory,
+    memory: *const M,
 }
 
-unsafe impl<B> Send for RawBlock<B>
-where
-    B: Backend,
-{
-}
+unsafe impl<M> Send for RawBlock<M> {}
 
-unsafe impl<B> Sync for RawBlock<B>
-where
-    B: Backend,
-{
-}
+unsafe impl<M> Sync for RawBlock<M> {}
 
-impl<B> RawBlock<B>
-where
-    B: Backend,
-{
+impl<M> RawBlock<M> {
     /// Construct a tagged block from `Memory` and `Range`.
     /// The given `Memory` must not be freed if there are `Block`s allocated from it that are still
     /// in use.
@@ -78,7 +68,7 @@ where
     ///
     /// - `memory`: pointer to the actual memory for the block
     /// - `range`: range of the `memory` used by the block
-    pub(crate) fn new(memory: *const B::Memory, range: Range<u64>) -> Self {
+    pub(crate) fn new(memory: *const M, range: Range<u64>) -> Self {
         assert!(range.start <= range.end);
         RawBlock {
             relevant: Relevant,
@@ -102,38 +92,36 @@ where
     }
 }
 
-impl<B> Block<B> for RawBlock<B>
+impl<M> Block for RawBlock<M>
 where
-    B: Backend,
+    M: Debug + Any,
 {
-    /// Get memory of the block.
+    type Memory = M;
+
     #[inline]
-    fn memory(&self) -> &B::Memory {
+    fn memory(&self) -> &M {
         // Has to be valid
         unsafe { &*self.memory }
     }
 
-    /// Get memory range of the block.
     #[inline]
     fn range(&self) -> Range<u64> {
         self.range.clone()
     }
 }
 
-impl<B, T, Y> Block<B> for (T, Y)
+impl<T, Y> Block for (T, Y)
 where
-    B: Backend,
-    T: Block<B>,
+    T: Block,
     Y: Send + Sync + Debug,
 {
-    /// Get memory of the block.
+    type Memory = T::Memory;
+
     #[inline(always)]
-    fn memory(&self) -> &B::Memory {
-        // Has to be valid
+    fn memory(&self) -> &T::Memory {
         self.0.memory()
     }
 
-    /// Get memory range of the block.
     #[inline(always)]
     fn range(&self) -> Range<u64> {
         self.0.range()

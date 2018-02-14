@@ -1,4 +1,6 @@
+use std::any::Any;
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::mem::replace;
 use std::ops::Range;
 
@@ -12,8 +14,7 @@ use block::{Block, RawBlock};
 ///
 /// ### Type parameters:
 ///
-/// - `B`: hal `Backend`
-/// - `A`: allocator used to allocate bigger blocks of memory
+/// - `T`: type of bigger blocks this allcator sub-allocates from.
 #[derive(Debug)]
 pub struct ArenaAllocator<T> {
     id: MemoryTypeId,
@@ -63,7 +64,7 @@ impl<T> ArenaAllocator<T> {
     fn cleanup<B, A>(&mut self, owner: &mut A, device: &B::Device)
     where
         B: Backend,
-        T: Block<B>,
+        T: Block<Memory = B::Memory>,
         A: MemoryAllocator<B, Block = T>,
     {
         while self.nodes
@@ -94,7 +95,7 @@ impl<T> ArenaAllocator<T> {
     ) -> Result<ArenaNode<T>, MemoryError>
     where
         B: Backend,
-        T: Block<B>,
+        T: Block<Memory = B::Memory>,
         A: MemoryAllocator<B, Block = T>,
     {
         let arena_size = ((reqs.size - 1) / self.arena_size + 1) * self.arena_size;
@@ -111,11 +112,11 @@ impl<T> ArenaAllocator<T> {
 impl<B, O, T> MemorySubAllocator<B, O> for ArenaAllocator<T>
 where
     B: Backend,
-    T: Block<B>,
+    T: Block<Memory = B::Memory>,
     O: MemoryAllocator<B, Block = T>,
 {
     type Request = O::Request;
-    type Block = ArenaBlock<B>;
+    type Block = ArenaBlock<B::Memory>;
 
     fn alloc(
         &mut self,
@@ -123,7 +124,7 @@ where
         device: &B::Device,
         request: O::Request,
         reqs: Requirements,
-    ) -> Result<ArenaBlock<B>, MemoryError> {
+    ) -> Result<ArenaBlock<B::Memory>, MemoryError> {
         if (1 << self.id.0) & reqs.type_mask == 0 {
             return Err(MemoryError::NoCompatibleMemoryType);
         }
@@ -147,7 +148,7 @@ where
         Ok(ArenaBlock(block, index))
     }
 
-    fn free(&mut self, owner: &mut O, device: &B::Device, block: ArenaBlock<B>) {
+    fn free(&mut self, owner: &mut O, device: &B::Device, block: ArenaBlock<B::Memory>) {
         let ArenaBlock(block, index) = block;
         let index = (index - self.freed) as usize;
 
@@ -191,9 +192,10 @@ impl<T> ArenaNode<T> {
         }
     }
 
-    fn alloc<B: Backend>(&mut self, reqs: Requirements) -> Option<RawBlock<B>>
+    fn alloc<M>(&mut self, reqs: Requirements) -> Option<RawBlock<M>>
     where
-        T: Block<B>,
+        M: Debug + Any,
+        T: Block<Memory = M>,
     {
         let offset = self.block.range().start + self.used;
         let total_size = reqs.size + alignment_shift(reqs.alignment, offset);
@@ -209,9 +211,10 @@ impl<T> ArenaNode<T> {
         }
     }
 
-    fn free<B: Backend>(&mut self, block: RawBlock<B>)
+    fn free<M>(&mut self, block: RawBlock<M>)
     where
-        T: Block<B>,
+        M: Debug + Any,
+        T: Block<Memory = M>,
     {
         assert!(self.block.contains(&block));
         self.freed += block.size();
@@ -225,7 +228,7 @@ impl<T> ArenaNode<T> {
     fn dispose<B, A>(self, owner: &mut A, device: &B::Device) -> Result<(), Self>
     where
         B: Backend,
-        T: Block<B>,
+        T: Block<Memory = B::Memory>,
         A: MemoryAllocator<B, Block = T>,
     {
         if self.is_used() {
@@ -237,27 +240,32 @@ impl<T> ArenaNode<T> {
     }
 }
 
-/// Opaque type for `Block` tag used by the `ArenaAllocator`.
-///
-/// `ArenaAllocator` places this tag on the memory blocks, and then use it in
-/// `free` to find the memory node the block was allocated from.
+/// `Block` type returned by `ArenaAllocator`.
 #[derive(Debug)]
-pub struct ArenaBlock<B: Backend>(pub(crate) RawBlock<B>, pub(crate) u64);
+pub struct ArenaBlock<M>(pub(crate) RawBlock<M>, pub(crate) u64);
 
-impl<B> Block<B> for ArenaBlock<B>
+impl<M> Block for ArenaBlock<M>
 where
-    B: Backend,
+    M: Debug + Any,
 {
-    /// Get memory of the block.
+    type Memory = M;
+
     #[inline(always)]
-    fn memory(&self) -> &B::Memory {
-        // Has to be valid
+    fn memory(&self) -> &M {
         self.0.memory()
     }
 
-    /// Get memory range of the block.
     #[inline(always)]
     fn range(&self) -> Range<u64> {
         self.0.range()
+    }
+}
+
+#[test]
+#[allow(dead_code)]
+fn test_send_sync() {
+    fn foo<T: Send + Sync>() {}
+    fn bar<M: Send + Sync>() {
+        foo::<ArenaAllocator<M>>()
     }
 }
