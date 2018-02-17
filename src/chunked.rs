@@ -10,8 +10,8 @@ use gfx_hal::memory::Requirements;
 use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
 use block::{Block, RawBlock};
 
-/// Chunks is super-allocator block
-/// That is devided into smaller blocks
+/// Chunks are super-allocator blocks,
+/// which are then divided into smaller 'blocks'
 #[derive(Debug)]
 struct FreeBlock {
     /// Index of chunk (big block from super-allocator)
@@ -50,12 +50,12 @@ impl<T> ChunkedNode<T> {
     }
 
     fn count(&self) -> usize {
-        // Blocks count is chunk count multiplyed by blocks per chunk
+        // Blocks count is chunk count multiplied by blocks per chunk
         self.chunks.len() * self.blocks_per_chunk()
     }
 
     fn blocks_per_chunk(&self) -> usize {
-        // How much blocks there in chunk
+        // How many blocks there are in a chunk
         (self.chunk_size / self.block_size) as usize
     }
 
@@ -75,23 +75,23 @@ impl<T> ChunkedNode<T> {
             size: self.chunk_size,
             alignment: self.block_size,
         };
-        // Get new chunk
+        // Get a new chunk
         let chunk = owner.alloc(device, request, reqs)?;
         assert_eq!(0, alignment_shift(reqs.alignment, chunk.range().start));
         assert!(chunk.size() >= self.chunk_size);
 
         let blocks_per_chunk = self.blocks_per_chunk();
 
-        // It takes next index
+        // `len()` will return the next index to use
         let chunk_index = self.chunks.len();
 
-        // Fill free list with new blocks
+        // Fill the free list with new blocks
         self.free.extend((0..blocks_per_chunk).map(|i| FreeBlock {
             chunk_index,
             block_index: i as u64,
         }));
 
-        // Put new chunk in list
+        // Place the new chunk in the list
         self.chunks.push(chunk);
 
         Ok(())
@@ -102,16 +102,17 @@ impl<T> ChunkedNode<T> {
         M: Debug + Any,
         T: Block<Memory = M>,
     {
-        // Find free block
+        // Find a free block
         self.free.pop_front().map(|free_block| {
             // Memory offset is block index times block size
             // plus chunk memory offset
-            let offset = free_block.block_index * self.block_size + self.chunks[free_block.chunk_index].range().start;
+            let offset = free_block.block_index * self.block_size
+                + self.chunks[free_block.chunk_index].range().start;
             let block = RawBlock::new(
                 self.chunks[free_block.chunk_index].memory(),
                 offset..self.block_size + offset,
             );
-            // Remember what chunk it came from
+            // Remember what chunk the block came from
             ChunkedBlock(block, free_block.chunk_index)
         })
     }
@@ -138,7 +139,7 @@ where
             return Err(MemoryError::NoCompatibleMemoryType);
         }
 
-        // Try to allocate block
+        // Try to allocate a block
         let block = match self.alloc_no_grow() {
             Some(block) => block,
             None => {
@@ -166,16 +167,16 @@ where
             block.1
         };
 
-        // Confirm chunk index
+        // Confirm the chunk index
         assert!(::std::ptr::eq(
             self.chunks[chunk_index].memory(),
             block_memory
         ));
 
-        // Calculate block index inside chunk
+        // Calculate the block index inside the chunk
         let block_index = (offset - self.chunks[chunk_index].range().start) / self.block_size;
 
-        // Push into free blocks list
+        // Push the block back into the 'free blocks' list
         self.free.push_front(FreeBlock {
             block_index,
             chunk_index,
