@@ -38,6 +38,7 @@ where
     root: RootAllocator<B>,
     arenas: ArenaAllocator<RawBlock<B::Memory>>,
     chunks: ChunkedAllocator<RawBlock<B::Memory>>,
+    allocations: usize,
 }
 
 impl<B> CombinedAllocator<B>
@@ -69,6 +70,7 @@ where
                 max_chunk_size,
                 memory_type_id,
             ),
+            allocations: 0,
         }
     }
 
@@ -91,7 +93,7 @@ where
         request: Type,
         reqs: Requirements,
     ) -> Result<CombinedBlock<B::Memory>, MemoryError> {
-        match request {
+        let block = match request {
             Type::ShortLived => self.arenas
                 .alloc(&mut self.root, device, (), reqs)
                 .map(|ArenaBlock(block, tag)| CombinedBlock(block, CombinedTag::Arena(tag))),
@@ -106,7 +108,9 @@ where
                     )
                 }
             }
-        }
+        }?;
+        self.allocations += 1;
+        Ok(block)
     }
 
     fn free(&mut self, device: &B::Device, block: CombinedBlock<B::Memory>) {
@@ -121,46 +125,26 @@ where
             }
             CombinedTag::Root => self.root.free(device, block.0),
         }
+        self.allocations -= 1;
     }
 
     fn is_used(&self) -> bool {
-        let used = self.arenas.is_used() || self.chunks.is_used();
-        assert_eq!(used, self.root.is_used());
-        used
+        if self.allocations == 0 {
+            debug_assert!(!self.arenas.is_used() && !self.chunks.is_used());
+            true
+        } else {
+            false
+        }
     }
 
     fn dispose(mut self, device: &B::Device) -> Result<(), Self> {
-        let memory_type_id = self.root.memory_type();
-        let arena_size = self.arenas.arena_size();
-        let blocks_per_chunk = self.chunks.blocks_per_chunk();
-        let min_block_size = self.chunks.min_block_size();
-        let max_chunk_size = self.chunks.max_chunk_size();
-
-        let arenas = self.arenas.dispose(&mut self.root, device);
-        let chunks = self.chunks.dispose(&mut self.root, device);
-
-        if arenas.is_err() || chunks.is_err() {
-            let arenas = arenas
-                .err()
-                .unwrap_or_else(|| ArenaAllocator::new(arena_size, memory_type_id));
-            let chunks = chunks.err().unwrap_or_else(|| {
-                ChunkedAllocator::new(
-                    blocks_per_chunk,
-                    min_block_size,
-                    max_chunk_size,
-                    memory_type_id,
-                )
-            });
-
-            Err(CombinedAllocator {
-                root: self.root,
-                arenas,
-                chunks,
-            })
-        } else {
-            self.root.dispose(device).unwrap();
-            Ok(())
+        if self.is_used() {
+            return Err(self);
         }
+        self.arenas.dispose(&mut self.root, device).unwrap();
+        self.chunks.dispose(&mut self.root, device).unwrap();
+        self.root.dispose(device).unwrap();
+        Ok(())
     }
 }
 
