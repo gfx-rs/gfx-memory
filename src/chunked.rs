@@ -10,19 +10,27 @@ use gfx_hal::memory::Requirements;
 use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
 use block::{Block, RawBlock};
 
+/// Chunks are super-allocator blocks,
+/// which are then divided into smaller 'blocks'
 #[derive(Debug)]
 struct FreeBlock {
-    block_index: usize,
-    chunk_index: u64,
+    /// Index of chunk (big block from super-allocator)
+    chunk_index: usize,
+    /// Block index inside the chunk
+    block_index: u64,
 }
 
 #[derive(Debug)]
 struct ChunkedNode<T> {
     id: MemoryTypeId,
-    block_size: u64,
+    /// Size of chunks - big blocks this allocator takes from super-allocator.
     chunk_size: u64,
+    /// Size of small blocks
+    block_size: u64,
+    /// List of free blocks
     free: VecDeque<FreeBlock>,
-    blocks: Vec<T>,
+    /// List of allocated chunks
+    chunks: Vec<T>,
 }
 
 impl<T> ChunkedNode<T> {
@@ -32,19 +40,22 @@ impl<T> ChunkedNode<T> {
             chunk_size,
             block_size,
             free: VecDeque::new(),
-            blocks: Vec::new(),
+            chunks: Vec::new(),
         }
     }
 
     fn is_used(&self) -> bool {
+        // All blocks are free
         self.count() != self.free.len()
     }
 
     fn count(&self) -> usize {
-        self.blocks.len() * self.blocks_per_chunk()
+        // Blocks count is chunk count multiplied by blocks per chunk
+        self.chunks.len() * self.blocks_per_chunk()
     }
 
     fn blocks_per_chunk(&self) -> usize {
+        // How many blocks there are in a chunk
         (self.chunk_size / self.block_size) as usize
     }
 
@@ -62,19 +73,26 @@ impl<T> ChunkedNode<T> {
         let reqs = Requirements {
             type_mask: 1 << self.id.0,
             size: self.chunk_size,
-            alignment: self.chunk_size,
+            alignment: self.block_size,
         };
-        let block = owner.alloc(device, request, reqs)?;
-        assert_eq!(0, alignment_shift(reqs.alignment, block.range().start));
-        assert!(block.size() >= self.chunk_size);
+        // Get a new chunk
+        let chunk = owner.alloc(device, request, reqs)?;
+        assert_eq!(0, alignment_shift(reqs.alignment, chunk.range().start));
+        assert!(chunk.size() >= self.chunk_size);
 
         let blocks_per_chunk = self.blocks_per_chunk();
-        let block_index = self.blocks.len();
+
+        // `len()` will return the next index to use
+        let chunk_index = self.chunks.len();
+
+        // Fill the free list with new blocks
         self.free.extend((0..blocks_per_chunk).map(|i| FreeBlock {
-            block_index,
-            chunk_index: i as u64,
+            chunk_index,
+            block_index: i as u64,
         }));
-        self.blocks.push(block);
+
+        // Place the new chunk in the list
+        self.chunks.push(chunk);
 
         Ok(())
     }
@@ -84,13 +102,18 @@ impl<T> ChunkedNode<T> {
         M: Debug + Any,
         T: Block<Memory = M>,
     {
+        // Find a free block
         self.free.pop_front().map(|free_block| {
-            let offset = free_block.chunk_index * self.chunk_size;
+            // Memory offset is block index times block size
+            // plus chunk memory offset
+            let offset = free_block.block_index * self.block_size
+                + self.chunks[free_block.chunk_index].range().start;
             let block = RawBlock::new(
-                self.blocks[free_block.block_index].memory(),
-                offset..self.chunk_size + offset,
+                self.chunks[free_block.chunk_index].memory(),
+                offset..self.block_size + offset,
             );
-            ChunkedBlock(block, free_block.block_index)
+            // Remember what chunk the block came from
+            ChunkedBlock(block, free_block.chunk_index)
         })
     }
 }
@@ -111,36 +134,49 @@ where
         request: O::Request,
         reqs: Requirements,
     ) -> Result<ChunkedBlock<B::Memory>, MemoryError> {
+        // Check memory type
         if (1 << self.id.0) & reqs.type_mask == 0 {
             return Err(MemoryError::NoCompatibleMemoryType);
         }
-        Ok(match self.alloc_no_grow() {
-            Some(block) => {
-                assert!(block.size() >= reqs.size);
-                assert_eq!(block.range().start & (reqs.alignment - 1), 0);
-                block
-            }
+
+        // Try to allocate a block
+        let block = match self.alloc_no_grow() {
+            Some(block) => block,
             None => {
+                // Grow from super-allocator
                 self.grow(owner, device, request)?;
                 self.alloc_no_grow().expect("Just growed")
             }
-        })
+        };
+
+        // Check that block meets the requirements.
+        assert!(block.size() >= reqs.size);
+        assert_eq!(block.range().start & (reqs.alignment - 1), 0);
+        Ok(block)
     }
 
     fn free(&mut self, _owner: &mut O, _device: &B::Device, block: ChunkedBlock<B::Memory>) {
-        assert_eq!(block.range().start % self.chunk_size, 0);
-        assert_eq!(block.size(), self.chunk_size);
+        assert_eq!(block.range().start % self.block_size, 0);
+        assert_eq!(block.size(), self.block_size);
         let offset = block.range().start;
         let block_memory: *const B::Memory = block.memory();
-        let block_index = unsafe {
+
+        // Dispose block retreiving chunk index
+        let chunk_index = unsafe {
             block.0.dispose();
             block.1
         };
+
+        // Confirm the chunk index
         assert!(::std::ptr::eq(
-            self.blocks[block_index].memory(),
+            self.chunks[chunk_index].memory(),
             block_memory
         ));
-        let chunk_index = offset / self.chunk_size;
+
+        // Calculate the block index inside the chunk
+        let block_index = (offset - self.chunks[chunk_index].range().start) / self.block_size;
+
+        // Push the block back into the 'free blocks' list
         self.free.push_front(FreeBlock {
             block_index,
             chunk_index,
@@ -151,8 +187,8 @@ where
         if self.is_used() {
             Err(self)
         } else {
-            for block in self.blocks.drain(..) {
-                owner.free(device, block);
+            for chunk in self.chunks.drain(..) {
+                owner.free(device, chunk);
             }
             Ok(())
         }
@@ -283,7 +319,7 @@ where
         request: O::Request,
         reqs: Requirements,
     ) -> Result<ChunkedBlock<B::Memory>, MemoryError> {
-        if reqs.size > self.max_chunk_size {
+        if max(reqs.size, reqs.alignment) > self.max_chunk_size {
             return Err(MemoryError::OutOfMemory);
         }
         let index = self.pick_node(max(reqs.size, reqs.alignment));
