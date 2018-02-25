@@ -64,6 +64,11 @@ where
                 .collect(),
         }
     }
+
+    /// Get properties of the block
+    pub fn properties(&self, block: &SmartBlock<B::Memory>) -> Properties {
+        self.allocators[block.1].0.properties
+    }
 }
 
 impl<B> MemoryAllocator<B> for SmartAllocator<B>
