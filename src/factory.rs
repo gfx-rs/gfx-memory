@@ -99,8 +99,21 @@ pub trait Factory<B: Backend> {
 #[derive(Debug)]
 pub struct Item<I, T> {
     raw: I,
-    size: u64,
     block: T,
+}
+
+impl<I, T> Item<I, T> {
+    /// Get raw item.
+    pub fn raw(&self) -> &I {
+        &self.raw
+    }
+}
+
+impl<I, T> Item<I, T> {
+    /// Get block of the item.
+    pub fn block(&self) -> &T {
+        &self.block
+    }
 }
 
 impl<I, T> Borrow<I> for Item<I, T> {
@@ -127,8 +140,7 @@ where
     }
 
     fn range(&self) -> Range<u64> {
-        let offset = self.block.range().start;
-        offset..offset + self.size
+        self.block.range()
     }
 }
 
@@ -219,7 +231,6 @@ where
         Ok(Item {
             raw: buf,
             block,
-            size,
         })
     }
 
@@ -241,7 +252,6 @@ where
         Ok(Item {
             raw: img,
             block,
-            size: reqs.size,
         })
     }
 
