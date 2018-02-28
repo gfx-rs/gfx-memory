@@ -10,5 +10,5 @@ license = "MIT/Apache-2.0"
 checks = []
 
 [dependencies]
-gfx-hal = { version = "0.1.0", git = "https://github.com/gfx-rs/gfx", rev = "68e80eaf" }
+gfx-hal = { version = "0.1.0", git = "https://github.com/gfx-rs/gfx", rev = "070e0cee4" }
 relevant = "0.1"
