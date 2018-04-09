@@ -7,7 +7,7 @@ use gfx_hal::{Backend, Device};
 use gfx_hal::buffer::{CreationError as BufferCreationError, Usage as BufferUsage};
 use gfx_hal::format::Format;
 use gfx_hal::image::{CreationError as ImageCreationError, Kind, Level, Usage as ImageUsage,
-                     StorageFlags};
+                     StorageFlags, Tiling};
 
 use block::Block;
 
@@ -71,6 +71,7 @@ pub trait Factory<B: Backend> {
         kind: Kind,
         level: Level,
         format: Format,
+        tiling: Tiling,
         usage: ImageUsage,
         storage_flags: StorageFlags,
     ) -> Result<Self::Image, Self::Error>;
@@ -243,10 +244,11 @@ where
         kind: Kind,
         level: Level,
         format: Format,
+        tiling: Tiling,
         usage: ImageUsage,
         storage_flags: StorageFlags,
     ) -> Result<Item<B::Image, A::Block>, FactoryError> {
-        let uimg = device.create_image(kind, level, format, usage, storage_flags)?;
+        let uimg = device.create_image(kind, level, format, tiling, usage, storage_flags)?;
         let reqs = device.get_image_requirements(&uimg);
         let block = self.alloc(device, request, reqs)?;
         let img = device
