@@ -47,7 +47,7 @@ pub use chunked::{ChunkedAllocator, ChunkedBlock};
 pub use combined::{CombinedAllocator, CombinedBlock, Type};
 pub use factory::{Factory, FactoryError, Item};
 pub use root::RootAllocator;
-pub use smart::{SmartAllocator, SmartBlock};
+pub use smart::{GenericSmartAllocator, GenericSmartBlock, SmartAllocator, SmartBlock};
 
 use std::cmp::PartialOrd;
 use std::error::Error;
