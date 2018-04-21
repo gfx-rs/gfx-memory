@@ -61,6 +61,17 @@ impl<T> ArenaAllocator<T> {
         self.arena_size
     }
 
+    /// Retrieves the block backing an allocation.
+    pub fn underlying_block<M>(&self, block: &ArenaBlock<M>) -> &T {
+        let index = (block.1 - self.freed) as usize;
+
+        if self.nodes.len() == index {
+            &self.hot.as_ref().unwrap().block
+        } else {
+            &self.nodes[index].block
+        }
+    }
+
     fn cleanup<B, A>(&mut self, owner: &mut A, device: &B::Device)
     where
         B: Backend,

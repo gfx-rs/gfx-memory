@@ -267,6 +267,12 @@ impl<T> ChunkedAllocator<T> {
         self.blocks_per_chunk
     }
 
+    /// Retrieves the block backing an allocation.
+    pub fn underlying_block<M: Debug + Any>(&self, block: &ChunkedBlock<M>) -> &T {
+        let index = self.pick_node(block.size());
+        &self.nodes[index as usize].chunks[block.1]
+    }
+
     fn block_size(&self, index: u8) -> u64 {
         self.min_block_size * (1u64 << (index as u8))
     }
