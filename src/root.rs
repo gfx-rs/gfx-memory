@@ -17,6 +17,7 @@ pub struct RootAllocator<B> {
     relevant: Relevant,
     id: MemoryTypeId,
     allocations: usize,
+    used: u64,
     pd: PhantomData<fn() -> B>,
 }
 
@@ -31,6 +32,7 @@ impl<B> RootAllocator<B> {
             relevant: Relevant,
             id,
             allocations: 0,
+            used: 0,
             pd: PhantomData,
         }
     }
@@ -38,6 +40,11 @@ impl<B> RootAllocator<B> {
     /// Get memory type this allocator allocates.
     pub fn memory_type(&self) -> MemoryTypeId {
         self.id
+    }
+
+    /// Get the total size of all blocks allocated by this allocator.
+    pub fn used(&self) -> u64 {
+        self.used
     }
 }
 
@@ -57,14 +64,17 @@ where
         let memory = device.allocate_memory(self.id, reqs.size)?;
         let memory = Box::into_raw(Box::new(memory)); // Suboptimal
         self.allocations += 1;
+        self.used += reqs.size;
         Ok(RawBlock::new(memory, 0..reqs.size))
     }
 
     fn free(&mut self, device: &B::Device, block: RawBlock<B::Memory>) {
+        let size = block.size();
         assert_eq!(block.range().start, 0);
         device.free_memory(*unsafe { Box::from_raw(block.memory() as *const _ as *mut _) });
         unsafe { block.dispose() };
         self.allocations -= 1;
+        self.used -= size;
     }
 
     fn is_used(&self) -> bool {

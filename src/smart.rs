@@ -69,6 +69,16 @@ where
     pub fn properties(&self, block: &SmartBlock<B::Memory>) -> Properties {
         self.allocators[block.1].0.properties
     }
+
+    /// Get the total size of all blocks allocated by this allocator.
+    pub fn used(&self) -> u64 {
+        self.allocators.iter().map(|alloc| alloc.1.used()).sum()
+    }
+
+    /// Get the total size of all chunks allocated by this allocator.
+    pub fn allocated(&self) -> u64 {
+        self.allocators.iter().map(|alloc| alloc.1.allocated()).sum()
+    }
 }
 
 impl<B> MemoryAllocator<B> for SmartAllocator<B>

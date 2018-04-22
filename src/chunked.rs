@@ -59,6 +59,14 @@ impl<T> ChunkedNode<T> {
         (self.chunk_size / self.block_size) as usize
     }
 
+    fn used(&self) -> u64 {
+        (self.count() - self.free.len()) as u64 * self.block_size
+    }
+
+    fn allocated(&self) -> u64 {
+        self.chunks.len() as u64 * self.chunk_size
+    }
+
     fn grow<B, A>(
         &mut self,
         owner: &mut A,
@@ -279,6 +287,16 @@ impl<T> ChunkedAllocator<T> {
     pub fn underlying_block<M: Debug + Any>(&self, block: &ChunkedBlock<M>) -> &T {
         let index = self.pick_node(block.size());
         &self.nodes[index as usize].chunks[block.1]
+    }
+
+    /// Get the total size of all blocks allocated by this allocator.
+    pub fn used(&self) -> u64 {
+        self.nodes.iter().map(|node| node.used()).sum()
+    }
+
+    /// Get the total size of all chunks allocated by this allocator.
+    pub fn allocated(&self) -> u64 {
+        self.nodes.iter().map(|node| node.allocated()).sum()
     }
 
     fn block_size(&self, index: u8) -> u64 {

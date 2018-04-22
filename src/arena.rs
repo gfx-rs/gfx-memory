@@ -30,7 +30,7 @@ pub struct ArenaAllocator<T> {
     nodes: VecDeque<ArenaNode<T>>,
 }
 
-impl<T> ArenaAllocator<T> {
+impl <T> ArenaAllocator<T> {
     /// Create a new arena allocator.
     ///
     /// ### Parameters:
@@ -77,6 +77,16 @@ impl<T> ArenaAllocator<T> {
         } else {
             &self.nodes[index].block
         }
+    }
+
+    /// Get the total size of all blocks allocated by this allocator.
+    pub fn used(&self) -> u64 {
+        self.nodes.iter().map(|node| node.used - node.freed).sum()
+    }
+
+    /// Get the total size of all chunks allocated by this allocator.
+    pub fn allocated(&self) -> u64 where T: Block {
+        self.nodes.iter().map(|node| node.block.size()).sum()
     }
 
     fn cleanup<B, A>(&mut self, owner: &mut A, device: &B::Device)
