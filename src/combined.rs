@@ -109,7 +109,7 @@ where
                 .alloc(&mut self.root, device, (), reqs)
                 .map(|ArenaBlock(block, tag)| CombinedBlock(block, CombinedTag::Arena(tag)))?,
             Type::General => {
-                if reqs.size > self.chunks.max_chunk_size() {
+                if reqs.size > self.chunks.max_chunk_size() / 2 {
                     let block = self.root
                         .alloc(device, (), reqs)
                         .map(|block| CombinedBlock(block, CombinedTag::Root))?;
