@@ -160,7 +160,7 @@ pub trait MemoryAllocator<B: Backend>: Debug {
         Self: Sized;
 }
 
-/// Trait for allocators that memory blocks from another allocator it doesn't own.
+/// Trait for allocators that sub-allocate memory blocks from another allocator it doesn't own.
 pub trait MemorySubAllocator<B: Backend, O> {
     /// Information required to allocate block.
     type Request;
