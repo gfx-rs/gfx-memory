@@ -16,7 +16,6 @@ use relevant::Relevant;
 pub struct RootAllocator<B> {
     relevant: Relevant,
     id: MemoryTypeId,
-    allocations: usize,
     used: u64,
     pd: PhantomData<fn() -> B>,
 }
@@ -31,7 +30,6 @@ impl<B> RootAllocator<B> {
         RootAllocator {
             relevant: Relevant,
             id,
-            allocations: 0,
             used: 0,
             pd: PhantomData,
         }
@@ -63,7 +61,6 @@ where
     ) -> Result<RawBlock<B::Memory>, MemoryError> {
         let memory = device.allocate_memory(self.id, reqs.size)?;
         let memory = Box::into_raw(Box::new(memory)); // Suboptimal
-        self.allocations += 1;
         self.used += reqs.size;
         Ok(RawBlock::new(memory, 0..reqs.size))
     }
@@ -73,12 +70,11 @@ where
         assert_eq!(block.range().start, 0);
         device.free_memory(*unsafe { Box::from_raw(block.memory() as *const _ as *mut _) });
         unsafe { block.dispose() };
-        self.allocations -= 1;
         self.used -= size;
     }
 
     fn is_used(&self) -> bool {
-        self.allocations != 0
+        self.used != 0
     }
 
     fn dispose(self, _: &B::Device) -> Result<(), Self> {
