@@ -231,7 +231,8 @@ where
     shift_for_alignment(alignment, offset) - offset
 }
 
-fn shift_for_alignment<T>(alignment: T, offset: T) -> T
+/// Shift from specified offset to fulfill required alignment
+pub fn shift_for_alignment<T>(alignment: T, offset: T) -> T
 where
     T: From<u8> + Add<Output = T> + Sub<Output = T> + BitOr<Output = T> + PartialOrd,
 {
