@@ -10,31 +10,38 @@ use gfx_hal::memory::Requirements;
 use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
 use block::{Block, RawBlock};
 
-/// Linear allocator that can be used for short-lived objects.
+/// Sub-allocator that can be used for short-lived objects.
+///
+/// This allocator allocates chunks in increments of `chunk_size` bytes, from which blocks are
+/// allocated linearly. Freed memory is not reused or reclaimed until all blocks in a chunk are
+/// freed.
+///
+/// This allocator can be used to allocate blocks of any size.
 ///
 /// ### Type parameters:
 ///
-/// - `T`: type of bigger blocks this allcator sub-allocates from.
+/// - `T`: type of blocks this allocator sub-allocates from.
 #[derive(Debug)]
 pub struct ArenaAllocator<T> {
     id: MemoryTypeId,
-    arena_size: u64,
+    chunk_size: u64,
     freed: u64,
     hot: Option<ArenaNode<T>>,
     nodes: VecDeque<ArenaNode<T>>,
 }
 
 impl<T> ArenaAllocator<T> {
-    /// Create a new arena allocator
+    /// Create a new arena allocator.
     ///
     /// ### Parameters:
     ///
-    /// - `arena_size`: size in bytes of the arena
-    /// - `id`: hal memory type
-    pub fn new(arena_size: u64, id: MemoryTypeId) -> Self {
+    /// - `chunk_size`: The minimum size of the chunks allocated from the underlying allocator
+    ///                 in bytes. All memory is allocated in increments of `chunk_size`.
+    /// - `id`: ID of the memory type this allocator allocates from.
+    pub fn new(chunk_size: u64, id: MemoryTypeId) -> Self {
         ArenaAllocator {
             id,
-            arena_size,
+            chunk_size,
             freed: 0,
             hot: None,
             nodes: VecDeque::new(),
@@ -56,9 +63,9 @@ impl<T> ArenaAllocator<T> {
         self.id
     }
 
-    /// Get size of the arena
-    pub fn arena_size(&self) -> u64 {
-        self.arena_size
+    /// Get the minimum size of each chunk in bytes
+    pub fn chunk_size(&self) -> u64 {
+        self.chunk_size
     }
 
     /// Retrieves the block backing an allocation.
@@ -109,10 +116,10 @@ impl<T> ArenaAllocator<T> {
         T: Block<Memory = B::Memory>,
         A: MemoryAllocator<B, Block = T>,
     {
-        let arena_size = ((reqs.size - 1) / self.arena_size + 1) * self.arena_size;
+        let size = ((reqs.size - 1) / self.chunk_size + 1) * self.chunk_size;
         let arena_requirements = Requirements {
             type_mask: 1 << self.id.0,
-            size: arena_size,
+            size,
             alignment: reqs.alignment,
         };
         let arena_block = owner.alloc(device, request, arena_requirements)?;

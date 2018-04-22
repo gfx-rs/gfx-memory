@@ -21,11 +21,10 @@ pub enum Type {
     General,
 }
 
-/// Combines `ArenaAllocator` and `ChunkedAllocator`, and allows the user to control which type of
-/// allocation to use.
+/// Allocator with support for both short-lived and long-lived allocations.
 ///
-/// Use `RootAllocator` as the super allocator, which will handle the actual memory allocations
-/// from `Device`.
+/// This allocator allocates blocks using either an `ArenaAllocator` or a `ChunkedAllocator`
+/// depending on which kind of allocation is requested.
 ///
 /// ### Type parameters:
 ///
@@ -49,21 +48,21 @@ where
     ///
     /// ### Parameters:
     ///
-    /// - `memory_type_id`: hal memory type
-    /// - `arena_size`: see `ArenaAllocator`
+    /// - `memory_type_id`: ID of the memory type this allocator allocates from.
+    /// - `arena_chunk_size`: see `ArenaAllocator`
     /// - `blocks_per_chunk`: see `ChunkedAllocator`
     /// - `min_block_size`: see `ChunkedAllocator`
     /// - `max_chunk_size`: see `ChunkedAllocator`
     pub fn new(
         memory_type_id: MemoryTypeId,
-        arena_size: u64,
+        arena_chunk_size: u64,
         blocks_per_chunk: usize,
         min_block_size: u64,
         max_chunk_size: u64,
     ) -> Self {
         CombinedAllocator {
             root: RootAllocator::new(memory_type_id),
-            arenas: ArenaAllocator::new(arena_size, memory_type_id),
+            arenas: ArenaAllocator::new(arena_chunk_size, memory_type_id),
             chunks: ChunkedAllocator::new(
                 blocks_per_chunk,
                 min_block_size,

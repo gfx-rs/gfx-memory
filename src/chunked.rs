@@ -195,12 +195,18 @@ where
     }
 }
 
-/// Allocator that rounds up the requested size to the closest power of two and returns a block
-/// from a list of equal sized chunks.
+/// Sub-allocator that can be used for long-lived objects.
+///
+/// This allocator allocates memory in chunks containing `blocks_per_chunk` equally sized blocks
+/// from the underlying allocator, up to a maximum chunk size of `max_chunk_size` bytes. It rounds
+/// up the requested allocation size to the closest power of two and returns a single block from a
+/// chunk.
+///
+/// This allocator can only allocate memory `max_chunk_size` bytes in size or less.
 ///
 /// ### Type parameters:
 ///
-/// - `T`: type of bigger blocks this allcator sub-allocates from.
+/// - `T`: type of bigger blocks this allocator sub-allocates from.
 #[derive(Debug)]
 pub struct ChunkedAllocator<T> {
     id: MemoryTypeId,
@@ -215,11 +221,13 @@ impl<T> ChunkedAllocator<T> {
     ///
     /// ### Parameters:
     ///
-    /// - `blocks_per_chunk`: used for calculating size of memory blocks to request from the
-    ///                       underlying allocator
-    /// - `min_block_size`: ?
-    /// - `max_chunk_size`: ?
-    /// - `id`: hal memory type
+    /// - `blocks_per_chunk`: The number of blocks in each chunk allocated from the underlying
+    ///                       allocator.
+    /// - `min_block_size`: The minimum block size used by this allocator in bytes. Allocations
+    ///                     significantly than this may incur much larger overhead.
+    /// - `max_chunk_size`: The maximum size of chunks allocated from the underlying allocator
+    ///                     in bytes. Blocks larger than this cannot be allocated.
+    /// - `id`: ID of the memory type this allocator allocates from.
     ///
     /// ### Panics
     ///
@@ -252,17 +260,17 @@ impl<T> ChunkedAllocator<T> {
         self.id
     }
 
-    /// Get minimal block size
+    /// Get minimum block size
     pub fn min_block_size(&self) -> u64 {
         self.min_block_size
     }
 
-    /// Get maximal chunk size
+    /// Get maximum chunk size
     pub fn max_chunk_size(&self) -> u64 {
         self.max_chunk_size
     }
 
-    /// Get chunks per block count
+    /// Get the number of chunks per block
     pub fn blocks_per_chunk(&self) -> usize {
         self.blocks_per_chunk
     }

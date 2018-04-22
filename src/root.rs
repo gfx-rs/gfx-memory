@@ -25,7 +25,7 @@ impl<B> RootAllocator<B> {
     ///
     /// ### Parameters:
     ///
-    /// - `id`: hal memory type
+    /// - `id`: ID of the memory type this allocator allocates from.
     pub fn new(id: MemoryTypeId) -> Self {
         RootAllocator {
             relevant: Relevant,
