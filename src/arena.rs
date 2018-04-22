@@ -38,7 +38,7 @@ impl<T> ArenaAllocator<T> {
     /// - `chunk_size`: The minimum size of the chunks allocated from the underlying allocator
     ///                 in bytes. All memory is allocated in increments of `chunk_size`.
     /// - `id`: ID of the memory type this allocator allocates from.
-    pub fn new(chunk_size: u64, id: MemoryTypeId) -> Self {
+    pub fn new(id: MemoryTypeId, chunk_size: u64) -> Self {
         ArenaAllocator {
             id,
             chunk_size,

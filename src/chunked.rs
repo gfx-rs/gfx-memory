@@ -34,7 +34,7 @@ struct ChunkedNode<T> {
 }
 
 impl<T> ChunkedNode<T> {
-    fn new(chunk_size: u64, block_size: u64, id: MemoryTypeId) -> Self {
+    fn new(id: MemoryTypeId, chunk_size: u64, block_size: u64) -> Self {
         ChunkedNode {
             id,
             chunk_size,
@@ -233,10 +233,10 @@ impl<T> ChunkedAllocator<T> {
     ///
     /// Panics if `min_block_size` or `max_chunk_size` are not a power of two.
     pub fn new(
+        id: MemoryTypeId,
         blocks_per_chunk: usize,
         min_block_size: u64,
         max_chunk_size: u64,
-        id: MemoryTypeId,
     ) -> Self {
         assert!(min_block_size.is_power_of_two());
         assert!(max_chunk_size.is_power_of_two());
@@ -311,7 +311,7 @@ impl<T> ChunkedAllocator<T> {
         let range = len..index + 1;
         self.nodes.reserve(range.len());
         for index in range {
-            let node = ChunkedNode::new(self.chunk_size(index), self.block_size(index), id);
+            let node = ChunkedNode::new(id, self.chunk_size(index), self.block_size(index));
             self.nodes.push(node);
         }
     }

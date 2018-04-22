@@ -62,12 +62,12 @@ where
     ) -> Self {
         CombinedAllocator {
             root: RootAllocator::new(memory_type_id),
-            arenas: ArenaAllocator::new(arena_chunk_size, memory_type_id),
+            arenas: ArenaAllocator::new(memory_type_id, arena_chunk_size),
             chunks: ChunkedAllocator::new(
+                memory_type_id,
                 blocks_per_chunk,
                 min_block_size,
                 max_chunk_size,
-                memory_type_id,
             ),
             allocations: 0,
         }
