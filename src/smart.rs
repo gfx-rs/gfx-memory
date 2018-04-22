@@ -28,13 +28,13 @@ where
     /// ### Parameters:
     ///
     /// - `memory_properties`: memory properties describing the memory available on a device
-    /// - `arena_size`: see `ArenaAllocator`
+    /// - `arena_chunk_size`: see `ArenaAllocator`
     /// - `blocks_per_chunk`: see `ChunkedAllocator`
     /// - `min_block_size`: see `ChunkedAllocator`
     /// - `max_chunk_size`: see `ChunkedAllocator`
     pub fn new(
         memory_properties: MemoryProperties,
-        arena_size: u64,
+        arena_chunk_size: u64,
         blocks_per_chunk: usize,
         min_block_size: u64,
         max_chunk_size: u64,
@@ -49,7 +49,7 @@ where
                         memory_type,
                         CombinedAllocator::new(
                             MemoryTypeId(index),
-                            arena_size,
+                            arena_chunk_size,
                             blocks_per_chunk,
                             min_block_size,
                             max_chunk_size,
@@ -68,6 +68,16 @@ where
     /// Get properties of the block
     pub fn properties(&self, block: &SmartBlock<B::Memory>) -> Properties {
         self.allocators[block.1].0.properties
+    }
+
+    /// Get the total size of all blocks allocated by this allocator.
+    pub fn used(&self) -> u64 {
+        self.allocators.iter().map(|alloc| alloc.1.used()).sum()
+    }
+
+    /// Get the total size of all chunks allocated by this allocator.
+    pub fn allocated(&self) -> u64 {
+        self.allocators.iter().map(|alloc| alloc.1.allocated()).sum()
     }
 }
 

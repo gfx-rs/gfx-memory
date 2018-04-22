@@ -34,7 +34,7 @@ struct ChunkedNode<T> {
 }
 
 impl<T> ChunkedNode<T> {
-    fn new(chunk_size: u64, block_size: u64, id: MemoryTypeId) -> Self {
+    fn new(id: MemoryTypeId, chunk_size: u64, block_size: u64) -> Self {
         ChunkedNode {
             id,
             chunk_size,
@@ -57,6 +57,14 @@ impl<T> ChunkedNode<T> {
     fn blocks_per_chunk(&self) -> usize {
         // How many blocks there are in a chunk
         (self.chunk_size / self.block_size) as usize
+    }
+
+    fn used(&self) -> u64 {
+        (self.count() - self.free.len()) as u64 * self.block_size
+    }
+
+    fn allocated(&self) -> u64 {
+        self.chunks.len() as u64 * self.chunk_size
     }
 
     fn grow<B, A>(
@@ -195,12 +203,18 @@ where
     }
 }
 
-/// Allocator that rounds up the requested size to the closest power of two and returns a block
-/// from a list of equal sized chunks.
+/// Sub-allocator that can be used for long-lived objects.
+///
+/// This allocator allocates memory in chunks containing `blocks_per_chunk` equally sized blocks
+/// from the underlying allocator, up to a maximum chunk size of `max_chunk_size` bytes. It rounds
+/// up the requested allocation size to the closest power of two and returns a single block from a
+/// chunk.
+///
+/// This allocator can only allocate memory `max_chunk_size` bytes in size or less.
 ///
 /// ### Type parameters:
 ///
-/// - `T`: type of bigger blocks this allcator sub-allocates from.
+/// - `T`: type of bigger blocks this allocator sub-allocates from.
 #[derive(Debug)]
 pub struct ChunkedAllocator<T> {
     id: MemoryTypeId,
@@ -215,20 +229,22 @@ impl<T> ChunkedAllocator<T> {
     ///
     /// ### Parameters:
     ///
-    /// - `blocks_per_chunk`: used for calculating size of memory blocks to request from the
-    ///                       underlying allocator
-    /// - `min_block_size`: ?
-    /// - `max_chunk_size`: ?
-    /// - `id`: hal memory type
+    /// - `blocks_per_chunk`: The number of blocks in each chunk allocated from the underlying
+    ///                       allocator.
+    /// - `min_block_size`: The minimum block size used by this allocator in bytes. Allocations
+    ///                     significantly than this may incur much larger overhead.
+    /// - `max_chunk_size`: The maximum size of chunks allocated from the underlying allocator
+    ///                     in bytes. Blocks larger than this cannot be allocated.
+    /// - `id`: ID of the memory type this allocator allocates from.
     ///
     /// ### Panics
     ///
     /// Panics if `min_block_size` or `max_chunk_size` are not a power of two.
     pub fn new(
+        id: MemoryTypeId,
         blocks_per_chunk: usize,
         min_block_size: u64,
         max_chunk_size: u64,
-        id: MemoryTypeId,
     ) -> Self {
         assert!(min_block_size.is_power_of_two());
         assert!(max_chunk_size.is_power_of_two());
@@ -252,17 +268,17 @@ impl<T> ChunkedAllocator<T> {
         self.id
     }
 
-    /// Get minimal block size
+    /// Get minimum block size
     pub fn min_block_size(&self) -> u64 {
         self.min_block_size
     }
 
-    /// Get maximal chunk size
+    /// Get maximum chunk size
     pub fn max_chunk_size(&self) -> u64 {
         self.max_chunk_size
     }
 
-    /// Get chunks per block count
+    /// Get the number of chunks per block
     pub fn blocks_per_chunk(&self) -> usize {
         self.blocks_per_chunk
     }
@@ -271,6 +287,16 @@ impl<T> ChunkedAllocator<T> {
     pub fn underlying_block<M: Debug + Any>(&self, block: &ChunkedBlock<M>) -> &T {
         let index = self.pick_node(block.size());
         &self.nodes[index as usize].chunks[block.1]
+    }
+
+    /// Get the total size of all blocks allocated by this allocator.
+    pub fn used(&self) -> u64 {
+        self.nodes.iter().map(|node| node.used()).sum()
+    }
+
+    /// Get the total size of all chunks allocated by this allocator.
+    pub fn allocated(&self) -> u64 {
+        self.nodes.iter().map(|node| node.allocated()).sum()
     }
 
     fn block_size(&self, index: u8) -> u64 {
@@ -303,7 +329,7 @@ impl<T> ChunkedAllocator<T> {
         let range = len..index + 1;
         self.nodes.reserve(range.len());
         for index in range {
-            let node = ChunkedNode::new(self.chunk_size(index), self.block_size(index), id);
+            let node = ChunkedNode::new(id, self.chunk_size(index), self.block_size(index));
             self.nodes.push(node);
         }
     }

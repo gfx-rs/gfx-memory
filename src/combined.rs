@@ -21,11 +21,10 @@ pub enum Type {
     General,
 }
 
-/// Combines `ArenaAllocator` and `ChunkedAllocator`, and allows the user to control which type of
-/// allocation to use.
+/// Allocator with support for both short-lived and long-lived allocations.
 ///
-/// Use `RootAllocator` as the super allocator, which will handle the actual memory allocations
-/// from `Device`.
+/// This allocator allocates blocks using either an `ArenaAllocator` or a `ChunkedAllocator`
+/// depending on which kind of allocation is requested.
 ///
 /// ### Type parameters:
 ///
@@ -36,6 +35,7 @@ where
     B: Backend,
 {
     root: RootAllocator<B>,
+    root_used: u64,
     arenas: ArenaAllocator<RawBlock<B::Memory>>,
     chunks: ChunkedAllocator<RawBlock<B::Memory>>,
     allocations: usize,
@@ -49,26 +49,27 @@ where
     ///
     /// ### Parameters:
     ///
-    /// - `memory_type_id`: hal memory type
-    /// - `arena_size`: see `ArenaAllocator`
+    /// - `memory_type_id`: ID of the memory type this allocator allocates from.
+    /// - `arena_chunk_size`: see `ArenaAllocator`
     /// - `blocks_per_chunk`: see `ChunkedAllocator`
     /// - `min_block_size`: see `ChunkedAllocator`
     /// - `max_chunk_size`: see `ChunkedAllocator`
     pub fn new(
         memory_type_id: MemoryTypeId,
-        arena_size: u64,
+        arena_chunk_size: u64,
         blocks_per_chunk: usize,
         min_block_size: u64,
         max_chunk_size: u64,
     ) -> Self {
         CombinedAllocator {
             root: RootAllocator::new(memory_type_id),
-            arenas: ArenaAllocator::new(arena_size, memory_type_id),
+            root_used: 0,
+            arenas: ArenaAllocator::new(memory_type_id, arena_chunk_size),
             chunks: ChunkedAllocator::new(
+                memory_type_id,
                 blocks_per_chunk,
                 min_block_size,
                 max_chunk_size,
-                memory_type_id,
             ),
             allocations: 0,
         }
@@ -77,6 +78,16 @@ where
     /// Get memory type id
     pub fn memory_type(&self) -> MemoryTypeId {
         self.root.memory_type()
+    }
+
+    /// Get the total size of all blocks allocated by this allocator.
+    pub fn used(&self) -> u64 {
+        self.root_used + self.arenas.used() + self.chunks.used()
+    }
+
+    /// Get the total size of all chunks allocated by this allocator.
+    pub fn allocated(&self) -> u64 {
+        self.root_used + self.arenas.allocated() + self.chunks.allocated()
     }
 }
 
@@ -96,19 +107,21 @@ where
         let block = match request {
             Type::ShortLived => self.arenas
                 .alloc(&mut self.root, device, (), reqs)
-                .map(|ArenaBlock(block, tag)| CombinedBlock(block, CombinedTag::Arena(tag))),
+                .map(|ArenaBlock(block, tag)| CombinedBlock(block, CombinedTag::Arena(tag)))?,
             Type::General => {
-                if reqs.size > self.chunks.max_chunk_size() {
-                    self.root
+                if reqs.size > self.chunks.max_chunk_size() / 2 {
+                    let block = self.root
                         .alloc(device, (), reqs)
-                        .map(|block| CombinedBlock(block, CombinedTag::Root))
+                        .map(|block| CombinedBlock(block, CombinedTag::Root))?;
+                    self.root_used += block.size();
+                    block
                 } else {
                     self.chunks.alloc(&mut self.root, device, (), reqs).map(
                         |ChunkedBlock(block, tag)| CombinedBlock(block, CombinedTag::Chunked(tag)),
-                    )
+                    )?
                 }
             }
-        }?;
+        };
         self.allocations += 1;
         Ok(block)
     }
@@ -116,14 +129,15 @@ where
     fn free(&mut self, device: &B::Device, block: CombinedBlock<B::Memory>) {
         match block.1 {
             CombinedTag::Arena(tag) => {
-                self.arenas
-                    .free(&mut self.root, device, ArenaBlock(block.0, tag))
+                self.arenas.free(&mut self.root, device, ArenaBlock(block.0, tag))
             }
             CombinedTag::Chunked(tag) => {
-                self.chunks
-                    .free(&mut self.root, device, ChunkedBlock(block.0, tag))
+                self.chunks.free(&mut self.root, device, ChunkedBlock(block.0, tag))
             }
-            CombinedTag::Root => self.root.free(device, block.0),
+            CombinedTag::Root => {
+                self.root_used -= block.size();
+                self.root.free(device, block.0)
+            },
         }
         self.allocations -= 1;
     }

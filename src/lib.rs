@@ -97,7 +97,7 @@ impl Error for MemoryError {
     }
 }
 
-/// Trait for managing memory allocations from `Device`.
+/// Trait for managing memory allocations from a `Device`.
 ///
 /// ### Type parameters:
 ///
@@ -160,7 +160,7 @@ pub trait MemoryAllocator<B: Backend>: Debug {
         Self: Sized;
 }
 
-/// Trait that allows to sub-allocate memory blocks from another allocator.
+/// Trait for allocators that sub-allocate memory blocks from another allocator it doesn't own.
 pub trait MemorySubAllocator<B: Backend, O> {
     /// Information required to allocate block.
     type Request;
