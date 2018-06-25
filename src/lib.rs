@@ -5,8 +5,9 @@
 //! ```rust
 //! extern crate gfx_hal;
 //! extern crate gfx_memory;
+//! extern crate failure;
 //!
-//! use std::error::Error;
+//! use failure::Error;
 //!
 //! use gfx_hal::{Backend, Device};
 //! use gfx_hal::buffer::Usage;
@@ -16,18 +17,17 @@
 //! fn make_vertex_buffer<B: Backend>(device: &B::Device,
 //!                                   allocator: &mut SmartAllocator<B>,
 //!                                   size: u64
-//! ) -> Result<(SmartBlock<B::Memory>, B::Buffer), Box<Error>>
+//! ) -> Result<(SmartBlock<B::Memory>, B::Buffer), Error>
 //! {
 //!     // Create unbounded buffer object. It has no memory assigned.
-//!     let ubuf: B::UnboundBuffer = device.create_buffer(size, Usage::VERTEX).map_err(Box::new)?;
+//!     let ubuf: B::UnboundBuffer = device.create_buffer(size, Usage::VERTEX)?;
 //!     // Ger memory requirements for the buffer.
 //!     let reqs = device.get_buffer_requirements(&ubuf);
 //!     // Allocate block of device-local memory that satisfy requirements for buffer.
-//!     let block = allocator.alloc(device, (Type::General, Properties::DEVICE_LOCAL), reqs).map_err(Box::new)?;
+//!     let block = allocator.alloc(device, (Type::General, Properties::DEVICE_LOCAL), reqs)?;
 //!     // Bind memory block to the buffer.
-//!     Ok(device.bind_buffer_memory(block.memory(), block.range().start, ubuf)
-//!              .map(|buffer| (block, buffer))
-//!              .map_err(Box::new)?)
+//!     let buffer = device.bind_buffer_memory(block.memory(), block.range().start, ubuf)?;
+//!     Ok((block, buffer))
 //! }
 //!
 //! # fn main() {}
@@ -39,6 +39,8 @@
 #![deny(unused_must_use)]
 
 extern crate gfx_hal;
+#[macro_use]
+extern crate failure;
 extern crate relevant;
 
 pub use arena::{ArenaAllocator, ArenaBlock};
@@ -50,8 +52,7 @@ pub use root::RootAllocator;
 pub use smart::{SmartAllocator, SmartBlock};
 
 use std::cmp::PartialOrd;
-use std::error::Error;
-use std::fmt::{self, Debug};
+use std::fmt::Debug;
 use std::ops::{Add, BitOr, Sub};
 
 use gfx_hal::Backend;
@@ -67,33 +68,20 @@ mod root;
 mod smart;
 
 /// Possible errors that may be returned from allocators.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Fail)]
 pub enum MemoryError {
     /// Allocator doesn't have compatible memory types.
+    #[fail(display = "No compatible memory found")]
     NoCompatibleMemoryType,
 
     /// All compatible memory is exhausted.
+    #[fail(display = "Out of memory")]
     OutOfMemory,
 }
 
 impl From<OutOfMemory> for MemoryError {
     fn from(_: OutOfMemory) -> Self {
         MemoryError::OutOfMemory
-    }
-}
-
-impl fmt::Display for MemoryError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self.description())
-    }
-}
-
-impl Error for MemoryError {
-    fn description(&self) -> &str {
-        match *self {
-            MemoryError::NoCompatibleMemoryType => "No compatible memory",
-            MemoryError::OutOfMemory => "Out of memory",
-        }
     }
 }
 

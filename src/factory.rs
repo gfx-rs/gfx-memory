@@ -1,6 +1,5 @@
 use std::borrow::{Borrow, BorrowMut};
-use std::error::Error;
-use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
+use std::fmt::Debug;
 use std::ops::Range;
 
 use gfx_hal::{Backend, Device};
@@ -149,16 +148,19 @@ where
 
 /// Possible errors that may be returned from the blanket `MemoryAllocator` as `Factory`
 /// implementation.
-#[derive(Debug)]
+#[derive(Debug, Clone, Fail)]
 pub enum FactoryError {
     /// Memory error.
-    MemoryError(MemoryError),
+    #[fail(display = "Memory error")]
+    MemoryError(#[cause] MemoryError),
 
     /// Buffer creation error.
-    BufferCreationError(BufferCreationError),
+    #[fail(display = "Failed to create buffer")]
+    BufferCreationError(#[cause] BufferCreationError),
 
     /// Image creation error.
-    ImageCreationError(ImageCreationError),
+    #[fail(display = "Failed to create image")]
+    ImageCreationError(#[cause] ImageCreationError),
 }
 
 impl From<MemoryError> for FactoryError {
@@ -176,34 +178,6 @@ impl From<BufferCreationError> for FactoryError {
 impl From<ImageCreationError> for FactoryError {
     fn from(error: ImageCreationError) -> Self {
         FactoryError::ImageCreationError(error)
-    }
-}
-
-impl Display for FactoryError {
-    fn fmt(&self, fmt: &mut Formatter) -> FmtResult {
-        match *self {
-            FactoryError::MemoryError(ref error) => write!(fmt, "{}", error),
-            FactoryError::BufferCreationError(ref error) => write!(fmt, "{}", error),
-            FactoryError::ImageCreationError(ref error) => write!(fmt, "{}", error),
-        }
-    }
-}
-
-impl Error for FactoryError {
-    fn description(&self) -> &str {
-        match *self {
-            FactoryError::MemoryError(_) => "Memory error in factory",
-            FactoryError::BufferCreationError(_) => "Buffer creation error in factory",
-            FactoryError::ImageCreationError(_) => "Image creation error in factory",
-        }
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        match *self {
-            FactoryError::MemoryError(ref error) => Some(error),
-            FactoryError::BufferCreationError(ref error) => Some(error),
-            FactoryError::ImageCreationError(ref error) => Some(error),
-        }
     }
 }
 
