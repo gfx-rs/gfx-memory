@@ -6,7 +6,7 @@ use gfx_hal::{Backend, Device};
 use gfx_hal::buffer::{CreationError as BufferCreationError, Usage as BufferUsage};
 use gfx_hal::format::Format;
 use gfx_hal::image::{CreationError as ImageCreationError, Kind, Level, Usage as ImageUsage,
-                     StorageFlags, Tiling};
+                     Tiling, ViewCapabilities};
 
 use block::Block;
 
@@ -72,7 +72,7 @@ pub trait Factory<B: Backend> {
         format: Format,
         tiling: Tiling,
         usage: ImageUsage,
-        storage_flags: StorageFlags,
+        view_caps: ViewCapabilities,
     ) -> Result<Self::Image, Self::Error>;
 
     /// Destroy a buffer created by this factory.
@@ -220,9 +220,9 @@ where
         format: Format,
         tiling: Tiling,
         usage: ImageUsage,
-        storage_flags: StorageFlags,
+        view_caps: ViewCapabilities,
     ) -> Result<Item<B::Image, A::Block>, FactoryError> {
-        let uimg = device.create_image(kind, level, format, tiling, usage, storage_flags)?;
+        let uimg = device.create_image(kind, level, format, tiling, usage, view_caps)?;
         let reqs = device.get_image_requirements(&uimg);
         let block = self.alloc(device, request, reqs)?;
         let img = device
