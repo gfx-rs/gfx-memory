@@ -11,5 +11,5 @@ checks = []
 
 [dependencies]
 failure = "0.1"
-gfx-hal = { version = "0.1.0", git = "https://github.com/gfx-rs/gfx", rev = "a435a05" }
+gfx-hal = { version = "0.1.0", git = "https://github.com/gfx-rs/gfx", rev = "c7fd233" }
 relevant = "0.1"
