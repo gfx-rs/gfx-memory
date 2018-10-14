@@ -39,7 +39,7 @@ fn make_vertex_buffer<B: Backend>(
 ) -> Result<(SmartBlock<B>, B::Buffer), Box<Error>> {
     // Create unbounded buffer object. It has no memory assigned.
     let ubuf: B::UnboundBuffer = device.create_buffer(size, Usage::VERTEX).map_err(Box::new)?;
-    // Ger memory requirements for the buffer.
+    // Get memory requirements for the buffer.
     let reqs = device.get_buffer_requirements(&ubuf);
     // Allocate block of device-local memory that satisfy requirements for buffer.
     let block = allocator
