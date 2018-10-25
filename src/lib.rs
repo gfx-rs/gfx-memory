@@ -57,6 +57,7 @@ use std::ops::{Add, BitOr, Sub};
 
 use gfx_hal::Backend;
 use gfx_hal::device::OutOfMemory;
+use gfx_hal::device::AllocationError;
 use gfx_hal::memory::Requirements;
 
 mod arena;
@@ -77,11 +78,24 @@ pub enum MemoryError {
     /// All compatible memory is exhausted.
     #[fail(display = "Out of memory")]
     OutOfMemory,
+
+    /// Implementations might have a limit on number of allocations
+    #[fail(display = "Can't allocate more objects")]
+    TooManyObjects,
 }
 
 impl From<OutOfMemory> for MemoryError {
     fn from(_: OutOfMemory) -> Self {
         MemoryError::OutOfMemory
+    }
+}
+
+impl From<AllocationError> for MemoryError {
+    fn from(err: AllocationError) -> Self {
+        match err {
+            AllocationError::OutOfMemory(_) => MemoryError::OutOfMemory,
+            AllocationError::TooManyObjects => MemoryError::TooManyObjects,
+        }
     }
 }
 
