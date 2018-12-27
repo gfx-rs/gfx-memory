@@ -35,7 +35,8 @@ pub trait Block: Send + Sync + Debug {
         T: Block<Memory = Self::Memory>,
     {
         use std::ptr::eq;
-        eq(self.memory(), other.memory()) && self.range().start <= other.range().start
+        eq(self.memory(), other.memory())
+            && self.range().start <= other.range().start
             && self.range().end >= other.range().end
     }
 }

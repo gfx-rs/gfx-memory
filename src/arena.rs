@@ -4,11 +4,11 @@ use std::fmt::Debug;
 use std::mem::replace;
 use std::ops::Range;
 
-use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
+use gfx_hal::{Backend, MemoryTypeId};
 
-use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
 use block::{Block, RawBlock};
+use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
 
 /// Sub-allocator that can be used for short-lived objects.
 ///
@@ -30,7 +30,7 @@ pub struct ArenaAllocator<T> {
     nodes: VecDeque<ArenaNode<T>>,
 }
 
-impl <T> ArenaAllocator<T> {
+impl<T> ArenaAllocator<T> {
     /// Create a new arena allocator.
     ///
     /// ### Parameters:
@@ -52,7 +52,8 @@ impl <T> ArenaAllocator<T> {
     /// If this function returns `false`, the allocator can be `dispose`d.
     pub fn is_used(&self) -> bool {
         !self.nodes.is_empty()
-            || self.hot
+            || self
+                .hot
                 .as_ref()
                 .map(|node| node.is_used())
                 .unwrap_or(false)
@@ -85,17 +86,21 @@ impl <T> ArenaAllocator<T> {
     }
 
     /// Get the total size of all chunks allocated by this allocator.
-    pub fn allocated(&self) -> u64 where T: Block {
+    pub fn allocated(&self) -> u64
+    where
+        T: Block,
+    {
         self.nodes.iter().map(|node| node.block.size()).sum()
     }
 
-    fn cleanup<B, A>(&mut self, owner: &mut A, device: &B::Device)
+    unsafe fn cleanup<B, A>(&mut self, owner: &mut A, device: &B::Device)
     where
         B: Backend,
         T: Block<Memory = B::Memory>,
         A: MemoryAllocator<B, Block = T>,
     {
-        while self.nodes
+        while self
+            .nodes
             .front()
             .map(|node| !node.is_used())
             .unwrap_or(false)
@@ -114,7 +119,7 @@ impl <T> ArenaAllocator<T> {
         }
     }
 
-    fn allocate_node<B, A>(
+    unsafe fn allocate_node<B, A>(
         &mut self,
         owner: &mut A,
         device: &B::Device,
@@ -146,7 +151,7 @@ where
     type Request = O::Request;
     type Block = ArenaBlock<B::Memory>;
 
-    fn alloc(
+    unsafe fn alloc(
         &mut self,
         owner: &mut O,
         device: &B::Device,
@@ -176,7 +181,7 @@ where
         Ok(ArenaBlock(block, index))
     }
 
-    fn free(&mut self, owner: &mut O, device: &B::Device, block: ArenaBlock<B::Memory>) {
+    unsafe fn free(&mut self, owner: &mut O, device: &B::Device, block: ArenaBlock<B::Memory>) {
         let ArenaBlock(block, index) = block;
         let index = (index - self.freed) as usize;
 
@@ -192,7 +197,7 @@ where
         }
     }
 
-    fn dispose(mut self, owner: &mut O, device: &B::Device) -> Result<(), Self> {
+    unsafe fn dispose(mut self, owner: &mut O, device: &B::Device) -> Result<(), Self> {
         if self.is_used() {
             Err(self)
         } else {
@@ -253,7 +258,7 @@ impl<T> ArenaNode<T> {
         self.freed != self.used
     }
 
-    fn dispose<B, A>(self, owner: &mut A, device: &B::Device) -> Result<(), Self>
+    unsafe fn dispose<B, A>(self, owner: &mut A, device: &B::Device) -> Result<(), Self>
     where
         B: Backend,
         T: Block<Memory = B::Memory>,

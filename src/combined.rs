@@ -2,14 +2,14 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::ops::Range;
 
-use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
+use gfx_hal::{Backend, MemoryTypeId};
 
-use {MemoryAllocator, MemoryError, MemorySubAllocator};
 use arena::{ArenaAllocator, ArenaBlock};
 use block::{Block, RawBlock};
 use chunked::{ChunkedAllocator, ChunkedBlock};
 use root::RootAllocator;
+use {MemoryAllocator, MemoryError, MemorySubAllocator};
 
 /// Controls what sub allocator is used for an allocation by `CombinedAllocator`
 #[derive(Clone, Copy, Debug)]
@@ -98,19 +98,21 @@ where
     type Request = Type;
     type Block = CombinedBlock<B::Memory>;
 
-    fn alloc(
+    unsafe fn alloc(
         &mut self,
         device: &B::Device,
         request: Type,
         reqs: Requirements,
     ) -> Result<CombinedBlock<B::Memory>, MemoryError> {
         let block = match request {
-            Type::ShortLived => self.arenas
+            Type::ShortLived => self
+                .arenas
                 .alloc(&mut self.root, device, (), reqs)
                 .map(|ArenaBlock(block, tag)| CombinedBlock(block, CombinedTag::Arena(tag)))?,
             Type::General => {
                 if reqs.size > self.chunks.max_chunk_size() / 2 {
-                    let block = self.root
+                    let block = self
+                        .root
                         .alloc(device, (), reqs)
                         .map(|block| CombinedBlock(block, CombinedTag::Root))?;
                     self.root_used += block.size();
@@ -126,18 +128,20 @@ where
         Ok(block)
     }
 
-    fn free(&mut self, device: &B::Device, block: CombinedBlock<B::Memory>) {
+    unsafe fn free(&mut self, device: &B::Device, block: CombinedBlock<B::Memory>) {
         match block.1 {
             CombinedTag::Arena(tag) => {
-                self.arenas.free(&mut self.root, device, ArenaBlock(block.0, tag))
+                self.arenas
+                    .free(&mut self.root, device, ArenaBlock(block.0, tag))
             }
             CombinedTag::Chunked(tag) => {
-                self.chunks.free(&mut self.root, device, ChunkedBlock(block.0, tag))
+                self.chunks
+                    .free(&mut self.root, device, ChunkedBlock(block.0, tag))
             }
             CombinedTag::Root => {
                 self.root_used -= block.size();
                 self.root.free(device, block.0)
-            },
+            }
         }
         self.allocations -= 1;
     }
@@ -151,7 +155,7 @@ where
         }
     }
 
-    fn dispose(mut self, device: &B::Device) -> Result<(), Self> {
+    unsafe fn dispose(mut self, device: &B::Device) -> Result<(), Self> {
         if self.is_used() {
             return Err(self);
         }
