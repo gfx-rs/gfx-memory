@@ -2,12 +2,12 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::ops::Range;
 
-use gfx_hal::{Backend, MemoryProperties, MemoryType, MemoryTypeId};
 use gfx_hal::memory::{Properties, Requirements};
+use gfx_hal::{Backend, MemoryProperties, MemoryType, MemoryTypeId};
 
-use {MemoryAllocator, MemoryError};
 use block::Block;
 use combined::{CombinedAllocator, CombinedBlock, Type};
+use {MemoryAllocator, MemoryError};
 
 /// Allocator that can choose memory type based on requirements, and keeps track of allocators
 /// for all given memory types.
@@ -77,7 +77,10 @@ where
 
     /// Get the total size of all chunks allocated by this allocator.
     pub fn allocated(&self) -> u64 {
-        self.allocators.iter().map(|alloc| alloc.1.allocated()).sum()
+        self.allocators
+            .iter()
+            .map(|alloc| alloc.1.allocated())
+            .sum()
     }
 }
 
@@ -88,7 +91,7 @@ where
     type Request = (Type, Properties);
     type Block = SmartBlock<B::Memory>;
 
-    fn alloc(
+    unsafe fn alloc(
         &mut self,
         device: &B::Device,
         (ty, prop): (Type, Properties),
@@ -141,7 +144,7 @@ where
         }
     }
 
-    fn free(&mut self, device: &B::Device, block: SmartBlock<B::Memory>) {
+    unsafe fn free(&mut self, device: &B::Device, block: SmartBlock<B::Memory>) {
         let SmartBlock(block, index) = block;
         self.heaps[self.allocators[index].0.heap_index].free(block.size());
         self.allocators[index].1.free(device, block);
@@ -153,7 +156,7 @@ where
             .any(|&(_, ref allocator)| allocator.is_used())
     }
 
-    fn dispose(mut self, device: &B::Device) -> Result<(), Self> {
+    unsafe fn dispose(mut self, device: &B::Device) -> Result<(), Self> {
         if self.is_used() {
             Err(self)
         } else {

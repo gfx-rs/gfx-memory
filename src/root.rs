@@ -1,11 +1,11 @@
 use std::marker::PhantomData;
 
-use gfx_hal::{Backend, Device, MemoryTypeId};
 use gfx_hal::memory::Requirements;
+use gfx_hal::{Backend, Device, MemoryTypeId};
 
-use {MemoryAllocator, MemoryError};
 use block::{Block, RawBlock};
 use relevant::Relevant;
+use {MemoryAllocator, MemoryError};
 
 /// Allocator that allocates memory directly from device.
 ///
@@ -53,7 +53,7 @@ where
     type Request = ();
     type Block = RawBlock<B::Memory>;
 
-    fn alloc(
+    unsafe fn alloc(
         &mut self,
         device: &B::Device,
         _: (),
@@ -65,11 +65,11 @@ where
         Ok(RawBlock::new(memory, 0..reqs.size))
     }
 
-    fn free(&mut self, device: &B::Device, block: RawBlock<B::Memory>) {
+    unsafe fn free(&mut self, device: &B::Device, block: RawBlock<B::Memory>) {
         let size = block.size();
         assert_eq!(block.range().start, 0);
-        device.free_memory(*unsafe { Box::from_raw(block.memory() as *const _ as *mut _) });
-        unsafe { block.dispose() };
+        device.free_memory(*Box::from_raw(block.memory() as *const _ as *mut _));
+        block.dispose();
         self.used -= size;
     }
 
@@ -77,7 +77,7 @@ where
         self.used != 0
     }
 
-    fn dispose(self, _: &B::Device) -> Result<(), Self> {
+    unsafe fn dispose(self, _: &B::Device) -> Result<(), Self> {
         if self.is_used() {
             Err(self)
         } else {

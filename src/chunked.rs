@@ -4,11 +4,11 @@ use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::ops::Range;
 
-use gfx_hal::{Backend, MemoryTypeId};
 use gfx_hal::memory::Requirements;
+use gfx_hal::{Backend, MemoryTypeId};
 
-use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
 use block::{Block, RawBlock};
+use {alignment_shift, MemoryAllocator, MemoryError, MemorySubAllocator};
 
 /// Chunks are super-allocator blocks,
 /// which are then divided into smaller 'blocks'
@@ -67,7 +67,7 @@ impl<T> ChunkedNode<T> {
         self.chunks.len() as u64 * self.chunk_size
     }
 
-    fn grow<B, A>(
+    unsafe fn grow<B, A>(
         &mut self,
         owner: &mut A,
         device: &B::Device,
@@ -135,7 +135,7 @@ where
     type Request = O::Request;
     type Block = ChunkedBlock<B::Memory>;
 
-    fn alloc(
+    unsafe fn alloc(
         &mut self,
         owner: &mut O,
         device: &B::Device,
@@ -163,14 +163,14 @@ where
         Ok(block)
     }
 
-    fn free(&mut self, _owner: &mut O, _device: &B::Device, block: ChunkedBlock<B::Memory>) {
+    unsafe fn free(&mut self, _owner: &mut O, _device: &B::Device, block: ChunkedBlock<B::Memory>) {
         assert_eq!(block.range().start % self.block_size, 0);
         assert_eq!(block.size(), self.block_size);
         let offset = block.range().start;
         let block_memory: *const B::Memory = block.memory();
 
         // Dispose block retreiving chunk index
-        let chunk_index = unsafe {
+        let chunk_index = {
             block.0.dispose();
             block.1
         };
@@ -191,7 +191,7 @@ where
         });
     }
 
-    fn dispose(mut self, owner: &mut O, device: &B::Device) -> Result<(), Self> {
+    unsafe fn dispose(mut self, owner: &mut O, device: &B::Device) -> Result<(), Self> {
         if self.is_used() {
             Err(self)
         } else {
@@ -344,7 +344,7 @@ where
     type Request = O::Request;
     type Block = ChunkedBlock<B::Memory>;
 
-    fn alloc(
+    unsafe fn alloc(
         &mut self,
         owner: &mut O,
         device: &B::Device,
@@ -359,12 +359,12 @@ where
         self.nodes[index as usize].alloc(owner, device, request, reqs)
     }
 
-    fn free(&mut self, owner: &mut O, device: &B::Device, block: ChunkedBlock<B::Memory>) {
+    unsafe fn free(&mut self, owner: &mut O, device: &B::Device, block: ChunkedBlock<B::Memory>) {
         let index = self.pick_node(block.size());
         self.nodes[index as usize].free(owner, device, block);
     }
 
-    fn dispose(mut self, owner: &mut O, device: &B::Device) -> Result<(), Self> {
+    unsafe fn dispose(mut self, owner: &mut O, device: &B::Device) -> Result<(), Self> {
         if self.is_used() {
             Err(self)
         } else {

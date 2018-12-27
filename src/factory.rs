@@ -2,11 +2,13 @@ use std::borrow::{Borrow, BorrowMut};
 use std::fmt::Debug;
 use std::ops::Range;
 
-use gfx_hal::{Backend, Device};
 use gfx_hal::buffer::{CreationError as BufferCreationError, Usage as BufferUsage};
+use gfx_hal::device::BindError;
 use gfx_hal::format::Format;
-use gfx_hal::image::{CreationError as ImageCreationError, Kind, Level, Usage as ImageUsage,
-                     Tiling, ViewCapabilities};
+use gfx_hal::image::{
+    CreationError as ImageCreationError, Kind, Level, Tiling, Usage as ImageUsage, ViewCapabilities,
+};
+use gfx_hal::{Backend, Device};
 
 use block::Block;
 
@@ -44,7 +46,7 @@ pub trait Factory<B: Backend> {
     ///              the buffer
     /// - `size`: size in bytes of the buffer
     /// - `usage`: hal buffer `Usage`
-    fn create_buffer(
+    unsafe fn create_buffer(
         &mut self,
         device: &B::Device,
         request: Self::BufferRequest,
@@ -63,7 +65,7 @@ pub trait Factory<B: Backend> {
     /// - `level`: mipmap level
     /// - `format`: texture format
     /// - `usage`: hal image usage
-    fn create_image(
+    unsafe fn create_image(
         &mut self,
         device: &B::Device,
         request: Self::ImageRequest,
@@ -81,7 +83,7 @@ pub trait Factory<B: Backend> {
     ///
     /// - `device`: device the buffer was created on
     /// - `buffer`: the buffer to destroy
-    fn destroy_buffer(&mut self, device: &B::Device, buffer: Self::Buffer);
+    unsafe fn destroy_buffer(&mut self, device: &B::Device, buffer: Self::Buffer);
 
     /// Destroy image created by this factory.
     ///
@@ -89,7 +91,7 @@ pub trait Factory<B: Backend> {
     ///
     /// - `device`: device the image was created on
     /// - `image`: the image to destroy
-    fn destroy_image(&mut self, device: &B::Device, image: Self::Image);
+    unsafe fn destroy_image(&mut self, device: &B::Device, image: Self::Image);
 }
 
 /// Memory resource produced by the blanket `MemoryAllocator` as `Factory` implementation.
@@ -154,6 +156,10 @@ pub enum FactoryError {
     #[fail(display = "Memory error")]
     MemoryError(#[cause] MemoryError),
 
+    /// Binding of a buffer or image object failed.
+    #[fail(display = "Bind error")]
+    BindError(#[cause] BindError),
+
     /// Buffer creation error.
     #[fail(display = "Failed to create buffer")]
     BufferCreationError(#[cause] BufferCreationError),
@@ -181,6 +187,12 @@ impl From<ImageCreationError> for FactoryError {
     }
 }
 
+impl From<BindError> for FactoryError {
+    fn from(error: BindError) -> Self {
+        FactoryError::BindError(error)
+    }
+}
+
 impl<B, A> Factory<B> for A
 where
     B: Backend,
@@ -192,26 +204,21 @@ where
     type ImageRequest = A::Request;
     type Error = FactoryError;
 
-    fn create_buffer(
+    unsafe fn create_buffer(
         &mut self,
         device: &B::Device,
         request: A::Request,
         size: u64,
         usage: BufferUsage,
     ) -> Result<Item<B::Buffer, A::Block>, FactoryError> {
-        let ubuf = device.create_buffer(size, usage)?;
-        let reqs = device.get_buffer_requirements(&ubuf);
+        let mut buf = device.create_buffer(size, usage)?;
+        let reqs = device.get_buffer_requirements(&buf);
         let block = self.alloc(device, request, reqs)?;
-        let buf = device
-            .bind_buffer_memory(block.memory(), block.range().start, ubuf)
-            .unwrap();
-        Ok(Item {
-            raw: buf,
-            block,
-        })
+        device.bind_buffer_memory(block.memory(), block.range().start, &mut buf)?;
+        Ok(Item { raw: buf, block })
     }
 
-    fn create_image(
+    unsafe fn create_image(
         &mut self,
         device: &B::Device,
         request: A::Request,
@@ -222,24 +229,19 @@ where
         usage: ImageUsage,
         view_caps: ViewCapabilities,
     ) -> Result<Item<B::Image, A::Block>, FactoryError> {
-        let uimg = device.create_image(kind, level, format, tiling, usage, view_caps)?;
-        let reqs = device.get_image_requirements(&uimg);
+        let mut img = device.create_image(kind, level, format, tiling, usage, view_caps)?;
+        let reqs = device.get_image_requirements(&img);
         let block = self.alloc(device, request, reqs)?;
-        let img = device
-            .bind_image_memory(block.memory(), block.range().start, uimg)
-            .unwrap();
-        Ok(Item {
-            raw: img,
-            block,
-        })
+        device.bind_image_memory(block.memory(), block.range().start, &mut img)?;
+        Ok(Item { raw: img, block })
     }
 
-    fn destroy_buffer(&mut self, device: &B::Device, buffer: Self::Buffer) {
+    unsafe fn destroy_buffer(&mut self, device: &B::Device, buffer: Self::Buffer) {
         device.destroy_buffer(buffer.raw);
         self.free(device, buffer.block);
     }
 
-    fn destroy_image(&mut self, device: &B::Device, image: Self::Image) {
+    unsafe fn destroy_image(&mut self, device: &B::Device, image: Self::Image) {
         device.destroy_image(image.raw);
         self.free(device, image.block);
     }

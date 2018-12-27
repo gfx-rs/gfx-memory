@@ -20,14 +20,14 @@
 //! ) -> Result<(SmartBlock<B::Memory>, B::Buffer), Error>
 //! {
 //!     // Create unbounded buffer object. It has no memory assigned.
-//!     let ubuf: B::UnboundBuffer = device.create_buffer(size, Usage::VERTEX)?;
+//!     let mut buf = unsafe { device.create_buffer(size, Usage::VERTEX)? };
 //!     // Ger memory requirements for the buffer.
-//!     let reqs = device.get_buffer_requirements(&ubuf);
+//!     let reqs = unsafe { device.get_buffer_requirements(&buf) };
 //!     // Allocate block of device-local memory that satisfy requirements for buffer.
-//!     let block = allocator.alloc(device, (Type::General, Properties::DEVICE_LOCAL), reqs)?;
+//!     let block = unsafe { allocator.alloc(device, (Type::General, Properties::DEVICE_LOCAL), reqs)? };
 //!     // Bind memory block to the buffer.
-//!     let buffer = device.bind_buffer_memory(block.memory(), block.range().start, ubuf)?;
-//!     Ok((block, buffer))
+//!     unsafe { device.bind_buffer_memory(block.memory(), block.range().start, &mut buf)? };
+//!     Ok((block, buf))
 //! }
 //!
 //! # fn main() {}
@@ -55,10 +55,10 @@ use std::cmp::PartialOrd;
 use std::fmt::Debug;
 use std::ops::{Add, BitOr, Sub};
 
-use gfx_hal::Backend;
-use gfx_hal::device::OutOfMemory;
 use gfx_hal::device::AllocationError;
+use gfx_hal::device::OutOfMemory;
 use gfx_hal::memory::Requirements;
+use gfx_hal::Backend;
 
 mod arena;
 mod block;
@@ -124,7 +124,7 @@ pub trait MemoryAllocator<B: Backend>: Debug {
     ///
     /// Returns a memory block compatible with the given requirements. If no such block could be
     /// allocated, a `MemoryError` is returned.
-    fn alloc(
+    unsafe fn alloc(
         &mut self,
         device: &B::Device,
         request: Self::Request,
@@ -139,7 +139,7 @@ pub trait MemoryAllocator<B: Backend>: Debug {
     ///
     /// - `device`: same device that was used to allocate the block of memory
     /// - `block`: block of memory to free
-    fn free(&mut self, device: &B::Device, block: Self::Block);
+    unsafe fn free(&mut self, device: &B::Device, block: Self::Block);
 
     /// Check if any of the blocks allocated by this allocator are still in use.
     /// If this function returns `false`, the allocator can be `dispose`d.
@@ -157,7 +157,7 @@ pub trait MemoryAllocator<B: Backend>: Debug {
     /// ### Returns
     ///
     /// If the allocator contains memory blocks that are still in use, this will return `Err(self)`.
-    fn dispose(self, device: &B::Device) -> Result<(), Self>
+    unsafe fn dispose(self, device: &B::Device) -> Result<(), Self>
     where
         Self: Sized;
 }
@@ -187,7 +187,7 @@ pub trait MemorySubAllocator<B: Backend, O> {
     ///
     /// Returns a memory block compatible with the given requirements. If no such block could be
     /// allocated, a `MemoryError` is returned.
-    fn alloc(
+    unsafe fn alloc(
         &mut self,
         owner: &mut O,
         device: &B::Device,
@@ -205,7 +205,7 @@ pub trait MemorySubAllocator<B: Backend, O> {
     /// - `owner`: allocator that was used to allocate the inner memory blocks
     /// - `device`: same device that was used to allocate the block of memory
     /// - `block`: block of memory to free
-    fn free(&mut self, owner: &mut O, device: &B::Device, block: Self::Block);
+    unsafe fn free(&mut self, owner: &mut O, device: &B::Device, block: Self::Block);
 
     /// Attempt to dispose of this allocator.
     ///
@@ -220,7 +220,7 @@ pub trait MemorySubAllocator<B: Backend, O> {
     /// ### Returns
     ///
     /// If the allocator contains memory blocks that are still in use, this will return `Err(self)`.
-    fn dispose(self, owner: &mut O, device: &B::Device) -> Result<(), Self>
+    unsafe fn dispose(self, owner: &mut O, device: &B::Device) -> Result<(), Self>
     where
         Self: Sized;
 }

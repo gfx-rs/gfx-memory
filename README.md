@@ -38,18 +38,20 @@ fn make_vertex_buffer<B: Backend>(
     size: u64,
 ) -> Result<(SmartBlock<B>, B::Buffer), Box<Error>> {
     // Create unbounded buffer object. It has no memory assigned.
-    let ubuf: B::UnboundBuffer = device.create_buffer(size, Usage::VERTEX).map_err(Box::new)?;
+    let mut buf = unsafe { device.create_buffer(size, Usage::VERTEX).map_err(Box::new)? };
     // Get memory requirements for the buffer.
-    let reqs = device.get_buffer_requirements(&ubuf);
+    let reqs = unsafe { device.get_buffer_requirements(&buf) };
     // Allocate block of device-local memory that satisfy requirements for buffer.
-    let block = allocator
-        .alloc(device, (Type::General, Properties::DEVICE_LOCAL), reqs)
-        .map_err(Box::new)?;
+    let block = unsafe {
+        allocator
+            .alloc(device, (Type::General, Properties::DEVICE_LOCAL), reqs)
+            .map_err(Box::new)?
+    };
     // Bind memory block to the buffer.
-    Ok(device
-        .bind_buffer_memory(block.memory(), block.range().start, ubuf)
+    Ok(unsafe { device
+        .bind_buffer_memory(block.memory(), block.range().start, &mut buf)
         .map(|buffer| (block, buffer))
-        .map_err(Box::new)?)
+        .map_err(Box::new)? })
 }
 
 ```
