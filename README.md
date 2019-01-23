@@ -1,3 +1,6 @@
+# Attention
+
+This project is discontinued in favor of [rendy](https://github.com/omni-viral/rendy).
 
 # gfx-memory - graphics memory management for gfx-hal.
 [![Build Status](https://travis-ci.org/gfx-rs/gfx-memory.svg)](https://travis-ci.org/gfx-rs/gfx-memory)
