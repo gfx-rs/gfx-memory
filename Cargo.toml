@@ -11,5 +11,5 @@ checks = []
 
 [dependencies]
 failure = "0.1"
-gfx-hal = "0.1.0"
+gfx-hal = "0.2.0"
 relevant = "0.2"
